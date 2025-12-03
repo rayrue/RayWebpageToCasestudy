@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: customer-story-service
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    healthCheckPath: /health
