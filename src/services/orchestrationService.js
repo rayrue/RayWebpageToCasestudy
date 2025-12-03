@@ -6,6 +6,14 @@ const extractionService = require('./extractionService');
 const parsingService = require('./parsingService');
 const templateService = require('./templateService');
 const storageService = require('./storageService');
+const aiAgentService = require('./aiAgentService');
+
+/**
+ * Check if AI agents are available
+ */
+function isAiEnabled() {
+  return Boolean(config.anthropic.apiKey);
+}
 
 /**
  * Process a single URL and generate story HTML
@@ -43,26 +51,61 @@ async function processSingleUrl(url, options = {}) {
       logger.debug(`URL redirected to: ${finalUrl}`);
     }
 
-    // Step 2: Parse and clean HTML
-    logger.debug(`Step 2: Parsing HTML - ${storyId}`);
-    const parsedContent = parsingService.parse(html);
+    let parsedContent;
+    let standardHtml;
+    let pdfReadyHtml;
 
-    // Step 3: Build content object
-    storyData.content = {
-      title: parsedContent.title,
-      textOnly: parsedContent.textOnly,
-      htmlStructured: parsedContent.htmlStructured,
-      wordCount: parsedContent.wordCount,
-      estimatedReadTime: parsedContent.estimatedReadTime,
-      metadata: parsedContent.metadata,
-      headings: parsedContent.headings,
-      quotes: parsedContent.quotes,
-    };
+    // Check if AI agents are enabled
+    if (isAiEnabled()) {
+      // Use AI Agent Pipeline
+      logger.info(`Using AI Agent Pipeline for ${storyId}`);
 
-    // Step 4: Generate HTML templates
-    logger.debug(`Step 3: Generating HTML templates - ${storyId}`);
-    const standardHtml = templateService.renderStandardHtml(storyData);
-    const pdfReadyHtml = templateService.renderPdfReadyHtml(storyData);
+      // Step 2: Process with AI agents (extract, review, format)
+      logger.debug(`Step 2: AI Agent Processing - ${storyId}`);
+      parsedContent = await aiAgentService.processWithAgents(html, finalUrl);
+
+      // Step 3: AI already generates the HTML
+      logger.debug(`Step 3: Using AI-generated HTML - ${storyId}`);
+      pdfReadyHtml = parsedContent.pdfReadyHtml;
+
+      // Generate standard HTML using template (for consistency)
+      storyData.content = {
+        title: parsedContent.title,
+        textOnly: parsedContent.textOnly,
+        htmlStructured: parsedContent.htmlStructured,
+        wordCount: parsedContent.wordCount,
+        estimatedReadTime: parsedContent.estimatedReadTime,
+        metadata: parsedContent.metadata,
+        headings: parsedContent.headings,
+        quotes: parsedContent.quotes,
+      };
+      standardHtml = templateService.renderStandardHtml(storyData);
+
+    } else {
+      // Use rule-based parsing (fallback)
+      logger.info(`Using rule-based parsing for ${storyId} (no AI key configured)`);
+
+      // Step 2: Parse and clean HTML
+      logger.debug(`Step 2: Parsing HTML - ${storyId}`);
+      parsedContent = parsingService.parse(html);
+
+      // Step 3: Build content object
+      storyData.content = {
+        title: parsedContent.title,
+        textOnly: parsedContent.textOnly,
+        htmlStructured: parsedContent.htmlStructured,
+        wordCount: parsedContent.wordCount,
+        estimatedReadTime: parsedContent.estimatedReadTime,
+        metadata: parsedContent.metadata,
+        headings: parsedContent.headings,
+        quotes: parsedContent.quotes,
+      };
+
+      // Step 4: Generate HTML templates
+      logger.debug(`Step 3: Generating HTML templates - ${storyId}`);
+      standardHtml = templateService.renderStandardHtml(storyData);
+      pdfReadyHtml = templateService.renderPdfReadyHtml(storyData);
+    }
 
     // Step 5: Save to storage
     logger.debug(`Step 4: Saving to storage - ${storyId}`);
@@ -85,11 +128,12 @@ async function processSingleUrl(url, options = {}) {
     const pdfReadyUrl = `${config.baseUrl}/stories/${storyId}/pdf-ready.html`;
     const urlBoxLink = templateService.generateUrlBoxLink(pdfReadyUrl);
 
-    return {
+    const response = {
       success: true,
       storyId,
       url: storyData.originalUrl,
       extractedAt,
+      processingMethod: isAiEnabled() ? 'ai-agents' : 'rule-based',
       content: {
         title: storyData.content.title,
         textOnly: storyData.content.textOnly,
@@ -100,6 +144,19 @@ async function processSingleUrl(url, options = {}) {
       pdfReadyUrl,
       urlBoxScreenshotLink: urlBoxLink,
     };
+
+    // Add AI-specific data if available
+    if (isAiEnabled() && parsedContent.aiReview) {
+      response.aiReview = parsedContent.aiReview;
+      response.content.companyName = parsedContent.metadata?.companyName || null;
+      response.content.industry = parsedContent.metadata?.industry || null;
+      response.content.metrics = parsedContent.metrics || [];
+      response.content.problem = parsedContent.problem || null;
+      response.content.solution = parsedContent.solution || null;
+      response.content.results = parsedContent.results || null;
+    }
+
+    return response;
   } catch (error) {
     // Handle extraction errors
     const extractionError = error instanceof ExtractionError

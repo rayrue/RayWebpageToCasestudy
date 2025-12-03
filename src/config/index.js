@@ -20,6 +20,12 @@ const config = {
   storagePath: process.env.STORAGE_PATH || './stories',
   dbPath: process.env.DB_PATH || './data/stories.db',
 
+  // Anthropic AI
+  anthropic: {
+    apiKey: process.env.ANTHROPIC_API_KEY || '',
+    model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+  },
+
   // URL Box
   urlbox: {
     apiKey: process.env.URLBOX_API_KEY || '',

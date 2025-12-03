@@ -1,15 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git branch:*)",
-      "Bash(git remote add:*)",
-      "Bash(git push:*)",
-      "Bash(git pull:*)",
-      "Bash(git checkout:*)",
-      "Bash(work management with Claude\" instead of generic \"Customer story\".\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(cd /Users/rayrhodes/Desktop/URL\\ Extract && npm install:*)",
+      "Bash(/usr/local/bin/npm install @anthropic-ai/sdk)",
+      "Bash(/opt/homebrew/bin/npm install @anthropic-ai/sdk)"
     ],
     "deny": [],
     "ask": []
