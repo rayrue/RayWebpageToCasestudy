@@ -5,8 +5,10 @@ const { normalizeWhitespace, countWords, calculateReadTime } = require('../utils
 
 /**
  * Selectors for elements to remove (noise/boilerplate)
+ * Expanded list to catch more common patterns
  */
 const REMOVE_SELECTORS = [
+  // Scripts and styles
   'script',
   'style',
   'noscript',
@@ -15,62 +17,202 @@ const REMOVE_SELECTORS = [
   'object',
   'svg',
   'canvas',
+  'video',
+  'audio',
+
+  // Navigation and structure
   'nav',
-  'header:not(article header)',
-  'footer:not(article footer)',
+  'header',
+  'footer',
+  'aside',
+
+  // Common class patterns for navigation
   '.navigation',
   '.nav',
+  '.navbar',
   '.menu',
+  '.header',
+  '.footer',
   '.sidebar',
   '.widget',
+  '.breadcrumb',
+  '.breadcrumbs',
+
+  // Advertising
   '.advertisement',
   '.ad',
   '.ads',
+  '.advert',
   '.banner',
+  '.sponsored',
+
+  // Social and sharing
   '.social-share',
   '.social-buttons',
   '.share-buttons',
+  '.social',
+  '.sharing',
+  '.share',
+  '[class*="social-"]',
+  '[class*="share-"]',
+
+  // Comments
   '.comments',
   '.comment-section',
+  '.comment',
+  '#comments',
+
+  // Related content - THIS IS KEY
   '.related-posts',
+  '.related-stories',
+  '.related-articles',
+  '.related-content',
+  '.related',
   '.recommended',
+  '.suggestions',
+  '.more-stories',
+  '.more-articles',
+  '.also-read',
+  '.you-may-like',
+  '.trending',
+  '.popular',
+  '[class*="related-"]',
+  '[class*="recommended"]',
+
+  // Newsletter and popups
   '.newsletter',
   '.subscription',
+  '.subscribe',
+  '.signup',
   '.popup',
   '.modal',
+  '.overlay',
   '.cookie-notice',
   '.cookie-banner',
+  '.cookies',
+  '.gdpr',
+  '.consent',
+
+  // Accessibility and hidden
   '[role="navigation"]',
   '[role="banner"]',
   '[role="complementary"]',
+  '[role="contentinfo"]',
   '[aria-hidden="true"]',
+  '.sr-only',
+  '.visually-hidden',
+  '.hidden',
+
+  // Common footer patterns
+  '[class*="footer"]',
+  '[id*="footer"]',
+
+  // CTA and promo sections
+  '.cta',
+  '.promo',
+  '.promotion',
+  '.call-to-action',
+
+  // Author bio (usually separate from content)
+  '.author-bio',
+  '.about-author',
+
+  // Tags and categories
+  '.tags',
+  '.categories',
+  '.post-tags',
+  '.article-tags',
+
+  // Pagination
+  '.pagination',
+  '.pager',
+  '.page-numbers',
+
+  // Forms
+  'form',
+
+  // Empty links and buttons that are just UI
+  'button',
+  '[role="button"]',
 ];
 
 /**
  * Selectors to find main article content (in priority order)
  */
 const ARTICLE_SELECTORS = [
+  // Most specific first
+  'article[class*="case-study"]',
+  'article[class*="customer-story"]',
+  'article[class*="story"]',
+  '.case-study-content',
+  '.customer-story-content',
+  '.story-content',
+
+  // Standard article patterns
   'article',
+  '[role="article"]',
   '[role="main"]',
+  'main article',
   'main',
+
+  // Common class patterns
+  '.article-body',
+  '.article-content',
+  '.post-body',
+  '.post-content',
+  '.entry-content',
+  '.story-body',
+  '.content-body',
+  '.main-content',
+  '.page-content',
+
+  // ID patterns
+  '#article-content',
+  '#main-content',
+  '#content',
+  '#article',
+
+  // Generic fallbacks
   '.article',
   '.post',
-  '.post-content',
-  '.article-content',
-  '.entry-content',
   '.content',
   '.blog-post',
   '.story',
   '.case-study',
-  '#content',
-  '#main-content',
-  '#article',
+];
+
+/**
+ * Text patterns that indicate non-content sections
+ */
+const NOISE_TEXT_PATTERNS = [
+  /^read more$/i,
+  /^learn more$/i,
+  /^see more$/i,
+  /^view more$/i,
+  /^next$/i,
+  /^prev$/i,
+  /^previous$/i,
+  /^share$/i,
+  /^tweet$/i,
+  /^follow us$/i,
+  /^subscribe$/i,
+  /^sign up$/i,
+  /^newsletter$/i,
+  /^related stories?$/i,
+  /^related articles?$/i,
+  /^you may also like$/i,
+  /^recommended$/i,
+  /^trending$/i,
+  /^popular$/i,
+  /^cookie/i,
+  /^privacy policy$/i,
+  /^terms of service$/i,
+  /^©/,
+  /^\d{4} \w+/,  // Copyright years
 ];
 
 /**
  * Parse HTML and load into cheerio
- * @param {string} html - Raw HTML string
- * @returns {CheerioAPI} Cheerio instance
  */
 function parseHtml(html) {
   if (!html || typeof html !== 'string') {
@@ -83,7 +225,7 @@ function parseHtml(html) {
   try {
     return cheerio.load(html, {
       decodeEntities: true,
-      normalizeWhitespace: false, // We'll handle this ourselves
+      normalizeWhitespace: false,
     });
   } catch (error) {
     throw new ExtractionError(
@@ -95,7 +237,6 @@ function parseHtml(html) {
 
 /**
  * Remove noise elements from the DOM
- * @param {CheerioAPI} $ - Cheerio instance
  */
 function removeNoise($) {
   REMOVE_SELECTORS.forEach(selector => {
@@ -105,53 +246,161 @@ function removeNoise($) {
       // Ignore invalid selectors
     }
   });
+
+  // Remove elements with noise text patterns
+  $('a, span, div, p').each((_, el) => {
+    const $el = $(el);
+    const text = $el.text().trim();
+
+    // Only remove if it's a small element (not a container with lots of content)
+    if (text.length < 50) {
+      for (const pattern of NOISE_TEXT_PATTERNS) {
+        if (pattern.test(text)) {
+          $el.remove();
+          break;
+        }
+      }
+    }
+  });
+
+  // Remove empty elements
+  $('p, div, span, section').each((_, el) => {
+    const $el = $(el);
+    if ($el.text().trim() === '' && $el.find('img').length === 0) {
+      $el.remove();
+    }
+  });
+
+  // Remove images without src or with placeholder/icon patterns
+  $('img').each((_, el) => {
+    const $el = $(el);
+    const src = $el.attr('src') || '';
+    const alt = ($el.attr('alt') || '').toLowerCase();
+
+    // Remove icons, logos, avatars, and placeholder images
+    if (
+      !src ||
+      src.includes('icon') ||
+      src.includes('logo') ||
+      src.includes('avatar') ||
+      src.includes('placeholder') ||
+      src.includes('1x1') ||
+      src.includes('pixel') ||
+      src.includes('spacer') ||
+      src.includes('data:image/gif') ||
+      src.includes('data:image/png;base64,iVBOR') || // tiny base64 images
+      alt.includes('icon') ||
+      alt.includes('logo') ||
+      alt.includes('avatar')
+    ) {
+      $el.remove();
+    }
+  });
+}
+
+/**
+ * Deep clean content after extraction
+ */
+function deepCleanContent($, content) {
+  const clone = content.clone();
+
+  // Remove any remaining noisy sections within the content
+  const inContentNoiseSelectors = [
+    '.related',
+    '.recommended',
+    '.social',
+    '.share',
+    '.author-bio',
+    '.tags',
+    '.categories',
+    '[class*="related"]',
+    '[class*="share"]',
+    '[class*="social"]',
+  ];
+
+  inContentNoiseSelectors.forEach(selector => {
+    try {
+      clone.find(selector).remove();
+    } catch {
+      // Ignore
+    }
+  });
+
+  // Remove links that are just navigation (short text, no context)
+  clone.find('a').each((_, el) => {
+    const $el = $(el);
+    const text = $el.text().trim();
+    const href = $el.attr('href') || '';
+
+    // Remove if it's a short navigational link
+    if (text.length < 30 && (
+      text.toLowerCase().includes('read more') ||
+      text.toLowerCase().includes('learn more') ||
+      text.toLowerCase().includes('view') ||
+      text.toLowerCase().includes('click here') ||
+      text.toLowerCase() === 'next' ||
+      text.toLowerCase() === 'prev' ||
+      text.toLowerCase() === 'previous' ||
+      href.includes('#') && text.length < 20
+    )) {
+      $el.remove();
+    }
+  });
+
+  return clone;
 }
 
 /**
  * Identify and extract the main article content
- * @param {CheerioAPI} $ - Cheerio instance
- * @returns {Cheerio} Main content element
  */
 function identifyMainContent($) {
   // Try each selector in priority order
   for (const selector of ARTICLE_SELECTORS) {
     const element = $(selector).first();
-    if (element.length && element.text().trim().length > 200) {
-      logger.debug(`Found main content using selector: ${selector}`);
-      return element;
+    if (element.length) {
+      const textLength = element.text().trim().length;
+      const paragraphCount = element.find('p').length;
+
+      // Must have substantial content
+      if (textLength > 500 && paragraphCount >= 2) {
+        logger.debug(`Found main content using selector: ${selector}`);
+        return deepCleanContent($, element);
+      }
     }
   }
 
   // Fallback: find the element with the most paragraph content
   let bestElement = null;
-  let maxTextLength = 0;
+  let maxScore = 0;
 
-  $('div, section').each((_, el) => {
+  $('div, section, article').each((_, el) => {
     const $el = $(el);
     const paragraphs = $el.find('p');
+    const paragraphCount = paragraphs.length;
     const textLength = paragraphs.text().length;
 
-    if (textLength > maxTextLength) {
-      maxTextLength = textLength;
+    // Score based on paragraph count and text length
+    const score = (paragraphCount * 100) + textLength;
+
+    // Must have multiple paragraphs
+    if (paragraphCount >= 3 && score > maxScore) {
+      maxScore = score;
       bestElement = $el;
     }
   });
 
-  if (bestElement && maxTextLength > 200) {
+  if (bestElement && maxScore > 500) {
     logger.debug('Found main content using paragraph density heuristic');
-    return bestElement;
+    return deepCleanContent($, bestElement);
   }
 
   // Last resort: use body
   logger.debug('Using body as main content (fallback)');
-  return $('body');
+  return deepCleanContent($, $('body'));
 }
 
 /**
  * Extract headings hierarchy from content
- * @param {CheerioAPI} $ - Cheerio instance
- * @param {Cheerio} content - Content element
- * @returns {Array} Headings array
  */
 function extractHeadings($, content) {
   const headings = [];
@@ -161,7 +410,8 @@ function extractHeadings($, content) {
     const level = parseInt(el.tagName.charAt(1), 10);
     const text = sanitizeText($el.text());
 
-    if (text) {
+    // Skip empty or very short headings
+    if (text && text.length > 2 && !NOISE_TEXT_PATTERNS.some(p => p.test(text))) {
       headings.push({ level, text });
     }
   });
@@ -171,9 +421,6 @@ function extractHeadings($, content) {
 
 /**
  * Extract blockquotes from content
- * @param {CheerioAPI} $ - Cheerio instance
- * @param {Cheerio} content - Content element
- * @returns {Array} Quotes array
  */
 function extractQuotes($, content) {
   const quotes = [];
@@ -183,7 +430,7 @@ function extractQuotes($, content) {
     const text = sanitizeText($el.text());
     const cite = $el.find('cite').text().trim() || null;
 
-    if (text && text.length > 20) {
+    if (text && text.length > 30) {
       quotes.push({ text, cite });
     }
   });
@@ -193,8 +440,6 @@ function extractQuotes($, content) {
 
 /**
  * Extract metadata from HTML head and content
- * @param {CheerioAPI} $ - Cheerio instance
- * @returns {Object} Metadata object
  */
 function extractMetadata($) {
   const metadata = {
@@ -204,14 +449,26 @@ function extractMetadata($) {
     publishedDate: null,
     imageUrl: null,
     siteName: null,
+    companyName: null,
   };
 
   // Title (in priority order)
   metadata.title =
     $('meta[property="og:title"]').attr('content') ||
     $('meta[name="twitter:title"]').attr('content') ||
-    $('title').text().trim() ||
-    $('h1').first().text().trim();
+    $('h1').first().text().trim() ||
+    $('title').text().trim();
+
+  // Clean up title - remove site name suffix
+  if (metadata.title && metadata.title.includes('|')) {
+    metadata.title = metadata.title.split('|')[0].trim();
+  }
+  if (metadata.title && metadata.title.includes(' - ')) {
+    const parts = metadata.title.split(' - ');
+    if (parts[0].length > 10) {
+      metadata.title = parts[0].trim();
+    }
+  }
 
   // Description
   metadata.description =
@@ -224,8 +481,7 @@ function extractMetadata($) {
     $('meta[name="author"]').attr('content') ||
     $('meta[property="article:author"]').attr('content') ||
     $('[rel="author"]').first().text().trim() ||
-    $('.author').first().text().trim() ||
-    $('[class*="author"]').first().text().trim();
+    $('.author-name').first().text().trim();
 
   // Published date
   metadata.publishedDate =
@@ -233,7 +489,7 @@ function extractMetadata($) {
     $('time[datetime]').first().attr('datetime') ||
     $('meta[name="date"]').attr('content');
 
-  // Image
+  // Featured image (for og:image)
   metadata.imageUrl =
     $('meta[property="og:image"]').attr('content') ||
     $('meta[name="twitter:image"]').attr('content');
@@ -242,7 +498,7 @@ function extractMetadata($) {
   metadata.siteName =
     $('meta[property="og:site_name"]').attr('content');
 
-  // Clean up null/empty values
+  // Clean up values
   Object.keys(metadata).forEach(key => {
     if (metadata[key]) {
       metadata[key] = sanitizeText(metadata[key]);
@@ -254,14 +510,11 @@ function extractMetadata($) {
 
 /**
  * Sanitize and clean text content
- * @param {string} text - Raw text
- * @returns {string} Cleaned text
  */
 function sanitizeText(text) {
   if (!text) return '';
 
   return text
-    // Remove HTML entities
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
@@ -269,27 +522,23 @@ function sanitizeText(text) {
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
     .replace(/&#x27;/g, "'")
-    // Remove control characters
     .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '')
-    // Normalize whitespace
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 /**
  * Convert content element to structured HTML
- * @param {CheerioAPI} $ - Cheerio instance
- * @param {Cheerio} content - Content element
- * @returns {string} Cleaned HTML
+ * Only keep meaningful content elements
  */
 function contentToHtml($, content) {
-  // Clone to avoid modifying original
   const clone = content.clone();
 
-  // Clean up attributes we don't need
+  // Remove all attributes except essential ones
   clone.find('*').each((_, el) => {
     const $el = $(el);
-    const allowedAttrs = ['href', 'src', 'alt', 'title'];
+    const tagName = el.tagName.toLowerCase();
+    const allowedAttrs = ['href', 'src', 'alt'];
     const attrs = Object.keys(el.attribs || {});
 
     attrs.forEach(attr => {
@@ -297,6 +546,23 @@ function contentToHtml($, content) {
         $el.removeAttr(attr);
       }
     });
+
+    // Only keep src for actual content images
+    if (tagName === 'img') {
+      const src = $el.attr('src') || '';
+      if (!src || src.length < 10) {
+        $el.remove();
+      }
+    }
+  });
+
+  // Remove any remaining empty containers
+  clone.find('div, span, section').each((_, el) => {
+    const $el = $(el);
+    const html = $el.html() || '';
+    if (html.trim() === '') {
+      $el.remove();
+    }
   });
 
   return clone.html();
@@ -304,12 +570,8 @@ function contentToHtml($, content) {
 
 /**
  * Convert content element to plain text
- * @param {CheerioAPI} $ - Cheerio instance
- * @param {Cheerio} content - Content element
- * @returns {string} Plain text
  */
 function contentToText($, content) {
-  // Clone to avoid modifying original
   const clone = content.clone();
 
   // Add spacing after block elements
@@ -321,14 +583,22 @@ function contentToText($, content) {
     $(el).append('\n\n');
   });
 
-  const text = clone.text();
-  return normalizeWhitespace(text);
+  let text = clone.text();
+  text = normalizeWhitespace(text);
+
+  // Remove repeated short lines (often navigation remnants)
+  const lines = text.split('\n');
+  const filteredLines = lines.filter(line => {
+    const trimmed = line.trim();
+    // Keep lines that are substantial or empty (for spacing)
+    return trimmed.length === 0 || trimmed.length > 20 || trimmed.includes(' ');
+  });
+
+  return filteredLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**
- * Main parsing function - orchestrates the full parsing process
- * @param {string} html - Raw HTML content
- * @returns {Object} Parsed content object
+ * Main parsing function
  */
 function parse(html) {
   logger.debug('Starting HTML parsing');
