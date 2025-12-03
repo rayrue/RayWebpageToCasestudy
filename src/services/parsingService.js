@@ -505,8 +505,10 @@ function extractQuotes($, content) {
 
 /**
  * Extract metadata from HTML head and content
+ * @param {Object} $ - Cheerio instance
+ * @param {string} earlyH1 - H1 text captured before noise removal
  */
-function extractMetadata($) {
+function extractMetadata($, earlyH1 = '') {
   const metadata = {
     title: null,
     description: null,
@@ -520,7 +522,8 @@ function extractMetadata($) {
   // Title (in priority order)
   const ogTitle = $('meta[property="og:title"]').attr('content') || '';
   const twitterTitle = $('meta[name="twitter:title"]').attr('content') || '';
-  const h1Title = $('h1').first().text().trim() || '';
+  // Use the early H1 (captured before noise removal) or current H1
+  const h1Title = earlyH1 || $('h1').first().text().trim() || '';
   const pageTitle = $('title').text().trim() || '';
 
   // Clean a title by removing site name suffixes
@@ -711,11 +714,14 @@ function parse(html) {
 
   const $ = parseHtml(html);
 
+  // Capture the H1 BEFORE removing noise (it may be in a hero section)
+  const earlyH1 = $('h1').first().text().trim() || '';
+
   // Remove noise first
   removeNoise($);
 
-  // Extract metadata
-  const metadata = extractMetadata($);
+  // Extract metadata, passing the early H1
+  const metadata = extractMetadata($, earlyH1);
 
   // Find main content
   const mainContent = identifyMainContent($);
