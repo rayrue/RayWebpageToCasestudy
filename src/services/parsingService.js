@@ -134,6 +134,33 @@ const REMOVE_SELECTORS = [
   // Empty links and buttons that are just UI
   'button',
   '[role="button"]',
+
+  // Video and media elements
+  '.video-wrapper',
+  '.video-container',
+  '.video-player',
+  '.video-embed',
+  '.media-wrapper',
+  '.media-container',
+  '[class*="video"]',
+  '[class*="player"]',
+  'figure video',
+  'figcaption',
+
+  // Hero and intro sections that are often just decoration
+  '.hero',
+  '.hero-section',
+  '.intro-section',
+  '.page-hero',
+  '[class*="hero"]',
+
+  // Carousel and slider elements
+  '.carousel',
+  '.slider',
+  '.swiper',
+  '[class*="carousel"]',
+  '[class*="slider"]',
+  '[class*="swiper"]',
 ];
 
 /**
@@ -209,6 +236,44 @@ const NOISE_TEXT_PATTERNS = [
   /^terms of service$/i,
   /^©/,
   /^\d{4} \w+/,  // Copyright years
+
+  // Video and media placeholders
+  /^video caption$/i,
+  /^image caption$/i,
+  /^caption$/i,
+  /^play video$/i,
+  /^watch video$/i,
+
+  // Navigation and exploration
+  /^explore here$/i,
+  /^explore$/i,
+  /^discover$/i,
+  /^browse$/i,
+  /^try claude$/i,
+  /^contact sales$/i,
+  /^get started$/i,
+  /^sign in$/i,
+  /^log in$/i,
+
+  // Button text patterns
+  /^button text$/i,
+  /^click here$/i,
+  /^submit$/i,
+
+  // Generic UI elements
+  /^next$/i,
+  /^prev$/i,
+  /^previous$/i,
+  /^back$/i,
+  /^close$/i,
+  /^menu$/i,
+  /^search$/i,
+
+  // Form and error messages
+  /^thank you!/i,
+  /^oops!/i,
+  /^something went wrong/i,
+  /^your submission/i,
 ];
 
 /**
@@ -590,8 +655,20 @@ function contentToText($, content) {
   const lines = text.split('\n');
   const filteredLines = lines.filter(line => {
     const trimmed = line.trim();
-    // Keep lines that are substantial or empty (for spacing)
-    return trimmed.length === 0 || trimmed.length > 20 || trimmed.includes(' ');
+
+    // Skip empty lines - we'll handle spacing later
+    if (trimmed.length === 0) return true;
+
+    // Check against noise patterns
+    for (const pattern of NOISE_TEXT_PATTERNS) {
+      if (pattern.test(trimmed)) {
+        return false;
+      }
+    }
+
+    // Keep lines that are substantial (have spaces = likely sentences)
+    // Or are reasonably long
+    return trimmed.length > 25 || trimmed.includes(' ');
   });
 
   return filteredLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
