@@ -1,8 +1,12 @@
 const axios = require('axios');
+const puppeteer = require('puppeteer');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { ExtractionError, ErrorTypes, isRetryable, getBackoffDelay } = require('../utils/errors');
 const { sleep, isValidUrl } = require('../utils/helpers');
+
+// Browser instance for reuse
+let browserInstance = null;
 
 // User agent rotation pool
 const USER_AGENTS = [
@@ -21,7 +25,74 @@ function getRandomUserAgent() {
 }
 
 /**
+ * Get or create browser instance
+ */
+async function getBrowser() {
+  if (!browserInstance) {
+    logger.info('Launching headless browser...');
+    browserInstance = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+      ],
+    });
+  }
+  return browserInstance;
+}
+
+/**
+ * Fetch URL using headless browser (for JavaScript-rendered pages)
+ */
+async function fetchWithBrowser(url, options = {}) {
+  const { timeout = 30000 } = options;
+
+  logger.info(`Fetching with headless browser: ${url}`);
+
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+
+  try {
+    // Set user agent
+    await page.setUserAgent(getRandomUserAgent());
+
+    // Set viewport
+    await page.setViewport({ width: 1280, height: 800 });
+
+    // Navigate and wait for content
+    await page.goto(url, {
+      waitUntil: 'networkidle2',
+      timeout,
+    });
+
+    // Wait a bit more for any lazy-loaded content
+    await page.waitForTimeout(2000);
+
+    // Get the fully rendered HTML
+    const html = await page.content();
+    const finalUrl = page.url();
+
+    logger.info(`Successfully fetched with browser: ${url} (${html.length} bytes)`);
+
+    return {
+      html,
+      headers: {},
+      status: 200,
+      url: finalUrl,
+    };
+  } finally {
+    await page.close();
+  }
+}
+
+/**
  * Fetch URL content with retry logic
+ * Uses headless browser by default for JavaScript-rendered pages
  * @param {string} url - The URL to fetch
  * @param {Object} options - Fetch options
  * @returns {Promise<{html: string, headers: Object, status: number}>}
@@ -30,7 +101,7 @@ async function fetchUrl(url, options = {}) {
   const {
     timeout = config.fetchTimeout,
     maxRetries = config.maxRetries,
-    userAgent = config.userAgent,
+    useBrowser = true,  // Default to using browser for JS-rendered content
   } = options;
 
   // Validate URL
@@ -48,10 +119,16 @@ async function fetchUrl(url, options = {}) {
     try {
       logger.debug(`Fetching URL (attempt ${attempt}/${maxRetries}): ${url}`);
 
+      // Use headless browser for full JavaScript rendering
+      if (useBrowser) {
+        return await fetchWithBrowser(url, { timeout });
+      }
+
+      // Fallback to axios for simple pages
       const response = await axios.get(url, {
         timeout,
         headers: {
-          'User-Agent': attempt === 1 ? userAgent : getRandomUserAgent(),
+          'User-Agent': getRandomUserAgent(),
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
           'Accept-Encoding': 'gzip, deflate, br',
@@ -86,7 +163,7 @@ async function fetchUrl(url, options = {}) {
         html: response.data,
         headers: response.headers,
         status: response.status,
-        url: response.request?.res?.responseUrl || url, // Final URL after redirects
+        url: response.request?.res?.responseUrl || url,
       };
     } catch (error) {
       lastError = error;
@@ -96,7 +173,7 @@ async function fetchUrl(url, options = {}) {
         if (!error.retryable || attempt === maxRetries) {
           throw error;
         }
-      } else if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      } else if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || error.name === 'TimeoutError') {
         lastError = new ExtractionError(
           ErrorTypes.TIMEOUT,
           `Request timed out after ${timeout}ms`,
@@ -181,9 +258,22 @@ function getMetadataFromHeaders(headers, html) {
   return metadata;
 }
 
+/**
+ * Close browser instance (for cleanup)
+ */
+async function closeBrowser() {
+  if (browserInstance) {
+    await browserInstance.close();
+    browserInstance = null;
+    logger.info('Browser instance closed');
+  }
+}
+
 module.exports = {
   fetchUrl,
+  fetchWithBrowser,
   extractText,
   getMetadataFromHeaders,
   getRandomUserAgent,
+  closeBrowser,
 };
