@@ -518,22 +518,51 @@ function extractMetadata($) {
   };
 
   // Title (in priority order)
-  metadata.title =
-    $('meta[property="og:title"]').attr('content') ||
-    $('meta[name="twitter:title"]').attr('content') ||
-    $('h1').first().text().trim() ||
-    $('title').text().trim();
+  const ogTitle = $('meta[property="og:title"]').attr('content') || '';
+  const twitterTitle = $('meta[name="twitter:title"]').attr('content') || '';
+  const h1Title = $('h1').first().text().trim() || '';
+  const pageTitle = $('title').text().trim() || '';
 
-  // Clean up title - remove site name suffix
-  if (metadata.title && metadata.title.includes('|')) {
-    metadata.title = metadata.title.split('|')[0].trim();
-  }
-  if (metadata.title && metadata.title.includes(' - ')) {
-    const parts = metadata.title.split(' - ');
-    if (parts[0].length > 10) {
-      metadata.title = parts[0].trim();
+  // Clean a title by removing site name suffixes
+  const cleanTitle = (title) => {
+    if (!title) return '';
+    let cleaned = title;
+    if (cleaned.includes('|')) {
+      cleaned = cleaned.split('|')[0].trim();
     }
+    if (cleaned.includes(' - ')) {
+      const parts = cleaned.split(' - ');
+      if (parts[0].length > 10) {
+        cleaned = parts[0].trim();
+      }
+    }
+    return cleaned;
+  };
+
+  // Check if a title is too generic
+  const isGenericTitle = (title) => {
+    if (!title) return true;
+    const lower = title.toLowerCase();
+    return (
+      lower === 'customer story' ||
+      lower === 'case study' ||
+      lower === 'success story' ||
+      lower.length < 10
+    );
+  };
+
+  // Prefer H1 if og:title is generic, otherwise use og:title
+  let bestTitle = cleanTitle(ogTitle) || cleanTitle(twitterTitle);
+
+  if (isGenericTitle(bestTitle) && h1Title && !isGenericTitle(h1Title)) {
+    bestTitle = cleanTitle(h1Title);
   }
+
+  if (!bestTitle || isGenericTitle(bestTitle)) {
+    bestTitle = cleanTitle(pageTitle) || h1Title || 'Untitled';
+  }
+
+  metadata.title = bestTitle;
 
   // Description
   metadata.description =
