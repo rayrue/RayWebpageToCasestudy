@@ -1,5 +1,4 @@
 const axios = require('axios');
-const puppeteer = require('puppeteer');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { ExtractionError, ErrorTypes, isRetryable, getBackoffDelay } = require('../utils/errors');
