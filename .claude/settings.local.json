@@ -1,10 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cd /Users/rayrhodes/Desktop/URL\\ Extract && npm install:*)",
-      "Bash(/usr/local/bin/npm install @anthropic-ai/sdk)",
-      "Bash(/opt/homebrew/bin/npm install @anthropic-ai/sdk)",
-      "Bash(git add:*)"
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

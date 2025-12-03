@@ -101,7 +101,7 @@ async function fetchUrl(url, options = {}) {
   const {
     timeout = config.fetchTimeout,
     maxRetries = config.maxRetries,
-    useBrowser = true,  // Default to using browser for JS-rendered content
+    useBrowser = false,  // Disabled - Puppeteer not working on Render
   } = options;
 
   // Validate URL
