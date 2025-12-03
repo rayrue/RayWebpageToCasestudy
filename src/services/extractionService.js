@@ -29,17 +29,18 @@ function getRandomUserAgent() {
  * Render sets PUPPETEER_EXECUTABLE_PATH or we check common locations
  */
 function getChromePath() {
-  // Check environment variable first (Render sets this)
+  // Check environment variable first (Docker sets this)
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    logger.info(`Using Chrome from env: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
     return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
 
-  // Common Chrome/Chromium paths on Linux (Render uses Linux)
+  // Common Chrome/Chromium paths on Linux
   const possiblePaths = [
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
     '/snap/bin/chromium',
   ];
 
@@ -48,7 +49,16 @@ function getChromePath() {
     possiblePaths.unshift('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
   }
 
-  // Return first path (we'll let puppeteer fail if Chrome isn't found)
+  // Check which path exists
+  const fs = require('fs');
+  for (const chromePath of possiblePaths) {
+    if (fs.existsSync(chromePath)) {
+      logger.info(`Found Chrome at: ${chromePath}`);
+      return chromePath;
+    }
+  }
+
+  logger.warn(`Chrome not found in any standard location. Tried: ${possiblePaths.join(', ')}`);
   return possiblePaths[0];
 }
 
@@ -60,20 +70,29 @@ async function getBrowser() {
     const chromePath = getChromePath();
     logger.info(`Launching headless browser with Chrome at: ${chromePath}`);
 
-    browserInstance = await puppeteer.launch({
-      headless: 'new',
-      executablePath: chromePath,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-extensions',
-      ],
-    });
+    try {
+      browserInstance = await puppeteer.launch({
+        headless: 'new',
+        executablePath: chromePath,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+          '--disable-extensions',
+          '--disable-software-rasterizer',
+        ],
+        timeout: 30000,
+      });
+      logger.info('Browser launched successfully');
+    } catch (launchError) {
+      logger.error(`Failed to launch browser: ${launchError.message}`);
+      logger.error(`Stack: ${launchError.stack}`);
+      throw launchError;
+    }
   }
   return browserInstance;
 }
@@ -154,9 +173,13 @@ async function fetchUrl(url, options = {}) {
       // Try browser first for JS content
       if (useBrowser) {
         try {
-          return await fetchWithBrowser(url, { timeout });
+          const result = await fetchWithBrowser(url, { timeout });
+          logger.info(`Browser fetch succeeded for ${url}`);
+          return result;
         } catch (browserError) {
-          logger.warn(`Browser fetch failed, falling back to axios: ${browserError.message}`);
+          logger.error(`Browser fetch failed for ${url}: ${browserError.message}`);
+          logger.error(`Browser error stack: ${browserError.stack}`);
+          logger.warn('Falling back to axios (JS content will NOT render)');
           // Fall through to axios
         }
       }
