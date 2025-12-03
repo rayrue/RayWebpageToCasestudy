@@ -116,7 +116,7 @@ async function start() {
   try {
     // Initialize storage (database + directories)
     logger.info('Initializing storage...');
-    storageService.initialize();
+    await storageService.initialize();
 
     // Start server
     const server = app.listen(config.port, () => {

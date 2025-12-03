@@ -1,16 +1,17 @@
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { ExtractionError, ErrorTypes } = require('../utils/errors');
 
 let db = null;
+let SQL = null;
 
 /**
  * Initialize the database and storage directories
  */
-function initialize() {
+async function initialize() {
   // Ensure storage directories exist
   const storageDir = path.resolve(config.storagePath);
   const dataDir = path.dirname(path.resolve(config.dbPath));
@@ -25,12 +26,22 @@ function initialize() {
     logger.info(`Created data directory: ${dataDir}`);
   }
 
-  // Initialize SQLite database
-  db = new Database(config.dbPath);
-  db.pragma('journal_mode = WAL');
+  // Initialize SQL.js
+  SQL = await initSqlJs();
+
+  // Load existing database or create new one
+  const dbPath = path.resolve(config.dbPath);
+  if (fs.existsSync(dbPath)) {
+    const fileBuffer = fs.readFileSync(dbPath);
+    db = new SQL.Database(fileBuffer);
+    logger.info('Loaded existing database');
+  } else {
+    db = new SQL.Database();
+    logger.info('Created new database');
+  }
 
   // Create tables
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS stories (
       story_id TEXT PRIMARY KEY,
       original_url TEXT NOT NULL,
@@ -45,8 +56,10 @@ function initialize() {
       error TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
+    )
+  `);
 
+  db.run(`
     CREATE TABLE IF NOT EXISTS batches (
       batch_id TEXT PRIMARY KEY,
       total_urls INTEGER DEFAULT 0,
@@ -56,14 +69,28 @@ function initialize() {
       story_ids TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_stories_status ON stories(status);
-    CREATE INDEX IF NOT EXISTS idx_stories_url ON stories(original_url);
-    CREATE INDEX IF NOT EXISTS idx_batches_created ON batches(created_at);
+    )
   `);
 
+  db.run(`CREATE INDEX IF NOT EXISTS idx_stories_status ON stories(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_stories_url ON stories(original_url)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_batches_created ON batches(created_at)`);
+
+  // Save database to disk
+  saveDatabase();
+
   logger.info('Database initialized successfully');
+}
+
+/**
+ * Save database to disk
+ */
+function saveDatabase() {
+  if (db) {
+    const data = db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(path.resolve(config.dbPath), buffer);
+  }
 }
 
 /**
@@ -71,7 +98,7 @@ function initialize() {
  */
 function getDb() {
   if (!db) {
-    initialize();
+    throw new Error('Database not initialized. Call initialize() first.');
   }
   return db;
 }
@@ -81,29 +108,65 @@ function getDb() {
  * @param {Object} storyData - Story data to save
  */
 function saveStory(storyData) {
-  const db = getDb();
+  const database = getDb();
 
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO stories
-    (story_id, original_url, status, extracted_at, title, text_content, html_content,
-     word_count, read_time, metadata, error, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `);
-
-  stmt.run(
-    storyData.storyId,
-    storyData.originalUrl,
-    storyData.status,
-    storyData.extractedAt,
-    storyData.content?.title || null,
-    storyData.content?.textOnly || null,
-    storyData.content?.htmlStructured || null,
-    storyData.content?.wordCount || 0,
-    storyData.content?.estimatedReadTime || null,
-    storyData.content?.metadata ? JSON.stringify(storyData.content.metadata) : null,
-    storyData.error || null
+  // Check if story exists
+  const existing = database.exec(
+    `SELECT story_id FROM stories WHERE story_id = ?`, [storyData.storyId]
   );
 
+  if (existing.length > 0 && existing[0].values.length > 0) {
+    // Update existing
+    database.run(`
+      UPDATE stories SET
+        original_url = ?,
+        status = ?,
+        extracted_at = ?,
+        title = ?,
+        text_content = ?,
+        html_content = ?,
+        word_count = ?,
+        read_time = ?,
+        metadata = ?,
+        error = ?,
+        updated_at = datetime('now')
+      WHERE story_id = ?
+    `, [
+      storyData.originalUrl,
+      storyData.status,
+      storyData.extractedAt,
+      storyData.content?.title || null,
+      storyData.content?.textOnly || null,
+      storyData.content?.htmlStructured || null,
+      storyData.content?.wordCount || 0,
+      storyData.content?.estimatedReadTime || null,
+      storyData.content?.metadata ? JSON.stringify(storyData.content.metadata) : null,
+      storyData.error || null,
+      storyData.storyId
+    ]);
+  } else {
+    // Insert new
+    database.run(`
+      INSERT INTO stories
+      (story_id, original_url, status, extracted_at, title, text_content, html_content,
+       word_count, read_time, metadata, error)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      storyData.storyId,
+      storyData.originalUrl,
+      storyData.status,
+      storyData.extractedAt,
+      storyData.content?.title || null,
+      storyData.content?.textOnly || null,
+      storyData.content?.htmlStructured || null,
+      storyData.content?.wordCount || 0,
+      storyData.content?.estimatedReadTime || null,
+      storyData.content?.metadata ? JSON.stringify(storyData.content.metadata) : null,
+      storyData.error || null
+    ]);
+  }
+
+  saveDatabase();
   logger.debug(`Saved story to database: ${storyData.storyId}`);
 }
 
@@ -113,14 +176,20 @@ function saveStory(storyData) {
  * @returns {Object|null} Story data or null
  */
 function getStory(storyId) {
-  const db = getDb();
+  const database = getDb();
 
-  const stmt = db.prepare('SELECT * FROM stories WHERE story_id = ?');
-  const row = stmt.get(storyId);
+  const result = database.exec(`SELECT * FROM stories WHERE story_id = ?`, [storyId]);
 
-  if (!row) {
+  if (!result.length || !result[0].values.length) {
     return null;
   }
+
+  const columns = result[0].columns;
+  const values = result[0].values[0];
+  const row = {};
+  columns.forEach((col, i) => {
+    row[col] = values[i];
+  });
 
   return {
     storyId: row.story_id,
@@ -148,15 +217,15 @@ function getStory(storyId) {
  * @param {string} error - Error message (optional)
  */
 function updateStoryStatus(storyId, status, error = null) {
-  const db = getDb();
+  const database = getDb();
 
-  const stmt = db.prepare(`
+  database.run(`
     UPDATE stories
     SET status = ?, error = ?, updated_at = datetime('now')
     WHERE story_id = ?
-  `);
+  `, [status, error, storyId]);
 
-  stmt.run(status, error, storyId);
+  saveDatabase();
 }
 
 /**
@@ -164,23 +233,49 @@ function updateStoryStatus(storyId, status, error = null) {
  * @param {Object} batchData - Batch data to save
  */
 function saveBatch(batchData) {
-  const db = getDb();
+  const database = getDb();
 
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO batches
-    (batch_id, total_urls, processed, completed, failed, story_ids, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-  `);
-
-  stmt.run(
-    batchData.batchId,
-    batchData.totalUrls,
-    batchData.processed || 0,
-    batchData.completed || 0,
-    batchData.failed || 0,
-    JSON.stringify(batchData.stories || [])
+  // Check if batch exists
+  const existing = database.exec(
+    `SELECT batch_id FROM batches WHERE batch_id = ?`, [batchData.batchId]
   );
 
+  if (existing.length > 0 && existing[0].values.length > 0) {
+    // Update existing
+    database.run(`
+      UPDATE batches SET
+        total_urls = ?,
+        processed = ?,
+        completed = ?,
+        failed = ?,
+        story_ids = ?,
+        updated_at = datetime('now')
+      WHERE batch_id = ?
+    `, [
+      batchData.totalUrls,
+      batchData.processed || 0,
+      batchData.completed || 0,
+      batchData.failed || 0,
+      JSON.stringify(batchData.stories || []),
+      batchData.batchId
+    ]);
+  } else {
+    // Insert new
+    database.run(`
+      INSERT INTO batches
+      (batch_id, total_urls, processed, completed, failed, story_ids)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      batchData.batchId,
+      batchData.totalUrls,
+      batchData.processed || 0,
+      batchData.completed || 0,
+      batchData.failed || 0,
+      JSON.stringify(batchData.stories || [])
+    ]);
+  }
+
+  saveDatabase();
   logger.debug(`Saved batch to database: ${batchData.batchId}`);
 }
 
@@ -190,14 +285,20 @@ function saveBatch(batchData) {
  * @returns {Object|null} Batch data or null
  */
 function getBatch(batchId) {
-  const db = getDb();
+  const database = getDb();
 
-  const stmt = db.prepare('SELECT * FROM batches WHERE batch_id = ?');
-  const row = stmt.get(batchId);
+  const result = database.exec(`SELECT * FROM batches WHERE batch_id = ?`, [batchId]);
 
-  if (!row) {
+  if (!result.length || !result[0].values.length) {
     return null;
   }
+
+  const columns = result[0].columns;
+  const values = result[0].values[0];
+  const row = {};
+  columns.forEach((col, i) => {
+    row[col] = values[i];
+  });
 
   return {
     batchId: row.batch_id,
@@ -217,7 +318,7 @@ function getBatch(batchId) {
  * @param {Object} updates - Fields to update
  */
 function updateBatch(batchId, updates) {
-  const db = getDb();
+  const database = getDb();
 
   const fields = [];
   const values = [];
@@ -242,8 +343,8 @@ function updateBatch(batchId, updates) {
   fields.push("updated_at = datetime('now')");
   values.push(batchId);
 
-  const stmt = db.prepare(`UPDATE batches SET ${fields.join(', ')} WHERE batch_id = ?`);
-  stmt.run(...values);
+  database.run(`UPDATE batches SET ${fields.join(', ')} WHERE batch_id = ?`, values);
+  saveDatabase();
 }
 
 /**
@@ -327,6 +428,7 @@ function saveBatchDashboard(batchId, html) {
  */
 function close() {
   if (db) {
+    saveDatabase();
     db.close();
     db = null;
     logger.info('Database connection closed');
