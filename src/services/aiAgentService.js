@@ -26,56 +26,59 @@ async function extractorAgent(rawHtml, sourceUrl) {
 
   const client = getClient();
 
-  const systemPrompt = `You are an expert content extractor specializing in customer stories, case studies, and success stories. Your job is to extract ONLY the main story content from a webpage's HTML.
+  const systemPrompt = `You are an expert content extractor for customer stories and case studies. Your job is to extract the ACTUAL VERBATIM content from a webpage - do NOT summarize or paraphrase.
 
-EXTRACT:
-- The main headline/title of the customer story
-- Company name being featured
-- Industry/sector
-- All narrative paragraphs that tell the customer's story
-- Direct quotes from customers or company representatives
-- Key metrics, statistics, and results mentioned
-- Problem/challenge described
-- Solution implemented
-- Outcomes and benefits
+CRITICAL RULES:
+1. Extract the ACTUAL TEXT from the page - copy it exactly as written
+2. DO NOT summarize, paraphrase, or rewrite any content
+3. Include ALL paragraphs from the main story - every single one
+4. Extract EXACT quotes with the person's name and title as written
+5. The "content" field should contain the FULL story text, not a summary
 
-DO NOT EXTRACT:
-- Navigation menus
-- Footer content
+EXTRACT VERBATIM:
+- The exact headline/title as it appears on the page
+- Company name as written
+- Industry/sector if mentioned
+- ALL narrative paragraphs - copy them exactly, preserving the full text
+- Direct quotes EXACTLY as written, with attribution
+- Specific metrics, statistics, and numbers mentioned
+- The problem/challenge section text
+- The solution section text
+- The results/outcomes section text
+
+DO NOT INCLUDE:
+- Navigation menus, headers, footers
 - Related stories or recommended articles
-- Advertisements
-- Cookie notices or consent banners
-- Social sharing buttons
-- Newsletter signup forms
-- Site-wide headers
-- "Read more" or "Learn more" links
-- Generic UI text like "Next", "Previous", "Video caption"
-- Author bios (unless they're a key quote source)
-- Tags or categories
-- Comments sections
+- Advertisements, cookie notices, popups
+- Social sharing buttons, newsletter signups
+- "Read more", "Learn more", "Next", "Previous" links
+- Generic UI text like "Video caption"
+- Tags, categories, author bios
 
-Return your extraction as JSON with this structure:
+Return your extraction as JSON:
 {
-  "title": "The main headline",
-  "companyName": "Featured company name",
+  "title": "The exact headline from the page",
+  "companyName": "Company name as written",
   "industry": "Industry/sector if mentioned",
-  "summary": "1-2 sentence summary",
-  "content": "The full extracted story content as clean paragraphs",
-  "quotes": [{"text": "quote text", "attribution": "person, title"}],
-  "metrics": [{"value": "50%", "description": "increase in productivity"}],
-  "problem": "The challenge/problem described",
-  "solution": "The solution implemented",
-  "results": "The outcomes and benefits"
-}`;
+  "summary": "1-2 sentence summary you write",
+  "content": "The FULL verbatim story content - ALL paragraphs copied exactly from the page, separated by newlines. This should be hundreds of words, not a short summary.",
+  "quotes": [{"text": "Exact quote text", "attribution": "Person Name, Their Title"}],
+  "metrics": [{"value": "50%", "description": "what it measures"}],
+  "problem": "The verbatim problem/challenge text from the story",
+  "solution": "The verbatim solution text from the story",
+  "results": "The verbatim results/outcomes text from the story"
+}
+
+IMPORTANT: The "content" field must contain the COMPLETE story text (typically 500-2000 words). If you only return a short paragraph, you are doing it wrong.`;
 
   const response = await client.messages.create({
     model: config.anthropic.model,
-    max_tokens: 4096,
+    max_tokens: 8192,  // Increased for full verbatim content
     system: systemPrompt,
     messages: [
       {
         role: 'user',
-        content: `Extract the customer story content from this webpage (${sourceUrl}):\n\n${rawHtml.substring(0, 100000)}` // Limit HTML size
+        content: `Extract the COMPLETE customer story content from this webpage. Copy ALL paragraphs verbatim - do not summarize.\n\nSource URL: ${sourceUrl}\n\nHTML Content:\n${rawHtml.substring(0, 100000)}`
       }
     ]
   });
