@@ -1,0 +1,366 @@
+const config = require('../config');
+const logger = require('../utils/logger');
+const { generateStoryId, generateBatchId, formatDate } = require('../utils/helpers');
+const { ExtractionError, ErrorTypes } = require('../utils/errors');
+const extractionService = require('./extractionService');
+const parsingService = require('./parsingService');
+const templateService = require('./templateService');
+const storageService = require('./storageService');
+
+/**
+ * Process a single URL and generate story HTML
+ * @param {string} url - URL to extract
+ * @param {Object} options - Processing options
+ * @returns {Promise<Object>} Story result
+ */
+async function processSingleUrl(url, options = {}) {
+  const storyId = generateStoryId();
+  const extractedAt = formatDate();
+
+  logger.info(`Processing URL: ${url} (${storyId})`);
+
+  // Initialize story record
+  const storyData = {
+    storyId,
+    originalUrl: url,
+    status: 'processing',
+    extractedAt,
+    content: null,
+    error: null,
+  };
+
+  try {
+    // Step 1: Fetch the URL
+    logger.debug(`Step 1: Fetching URL - ${storyId}`);
+    const { html, url: finalUrl } = await extractionService.fetchUrl(url, {
+      timeout: options.timeout || config.fetchTimeout,
+      maxRetries: options.maxRetries || config.maxRetries,
+    });
+
+    // Update URL if redirected
+    if (finalUrl !== url) {
+      storyData.originalUrl = finalUrl;
+      logger.debug(`URL redirected to: ${finalUrl}`);
+    }
+
+    // Step 2: Parse and clean HTML
+    logger.debug(`Step 2: Parsing HTML - ${storyId}`);
+    const parsedContent = parsingService.parse(html);
+
+    // Step 3: Build content object
+    storyData.content = {
+      title: parsedContent.title,
+      textOnly: parsedContent.textOnly,
+      htmlStructured: parsedContent.htmlStructured,
+      wordCount: parsedContent.wordCount,
+      estimatedReadTime: parsedContent.estimatedReadTime,
+      metadata: parsedContent.metadata,
+      headings: parsedContent.headings,
+      quotes: parsedContent.quotes,
+    };
+
+    // Step 4: Generate HTML templates
+    logger.debug(`Step 3: Generating HTML templates - ${storyId}`);
+    const standardHtml = templateService.renderStandardHtml(storyData);
+    const pdfReadyHtml = templateService.renderPdfReadyHtml(storyData);
+
+    // Step 5: Save to storage
+    logger.debug(`Step 4: Saving to storage - ${storyId}`);
+    storageService.saveHtmlFiles(storyId, standardHtml, pdfReadyHtml);
+
+    // Update status to completed
+    storyData.status = 'completed';
+    storyData.files = {
+      standardHtml: `/stories/${storyId}/index.html`,
+      pdfReadyHtml: `/stories/${storyId}/pdf-ready.html`,
+    };
+
+    // Save to database
+    storageService.saveStory(storyData);
+
+    logger.info(`Successfully processed URL: ${url} (${storyId})`);
+
+    // Build response
+    const htmlPageUrl = `${config.baseUrl}/stories/${storyId}/index.html`;
+    const pdfReadyUrl = `${config.baseUrl}/stories/${storyId}/pdf-ready.html`;
+    const urlBoxLink = templateService.generateUrlBoxLink(pdfReadyUrl);
+
+    return {
+      success: true,
+      storyId,
+      url: storyData.originalUrl,
+      extractedAt,
+      content: {
+        title: storyData.content.title,
+        textOnly: storyData.content.textOnly,
+        wordCount: storyData.content.wordCount,
+        estimatedReadTime: storyData.content.estimatedReadTime,
+      },
+      htmlPageUrl,
+      pdfReadyUrl,
+      urlBoxScreenshotLink: urlBoxLink,
+    };
+  } catch (error) {
+    // Handle extraction errors
+    const extractionError = error instanceof ExtractionError
+      ? error
+      : new ExtractionError(ErrorTypes.UNKNOWN, error.message);
+
+    storyData.status = 'failed';
+    storyData.error = extractionError.type;
+
+    // Save failed story to database
+    storageService.saveStory(storyData);
+
+    logger.error(`Failed to process URL: ${url} - ${extractionError.message}`);
+
+    return {
+      success: false,
+      storyId: null,
+      error: extractionError.type,
+      message: extractionError.message,
+      url,
+      retryable: extractionError.retryable,
+    };
+  }
+}
+
+/**
+ * Process a batch of URLs from parsed CSV data
+ * @param {Array} urlList - Array of {url, name, priority} objects
+ * @returns {Promise<Object>} Batch result
+ */
+async function processBatch(urlList) {
+  const batchId = generateBatchId();
+  const createdAt = formatDate();
+
+  logger.info(`Starting batch processing: ${batchId} (${urlList.length} URLs)`);
+
+  // Initialize batch record
+  const batchData = {
+    batchId,
+    totalUrls: urlList.length,
+    processed: 0,
+    completed: 0,
+    failed: 0,
+    stories: [],
+    results: [],
+    createdAt,
+  };
+
+  // Save initial batch record
+  storageService.saveBatch(batchData);
+
+  // Process URLs with concurrency control
+  const concurrency = config.maxConcurrentWorkers;
+  const results = [];
+
+  // Process in batches of `concurrency` size
+  for (let i = 0; i < urlList.length; i += concurrency) {
+    const batch = urlList.slice(i, i + concurrency);
+
+    const batchPromises = batch.map(async (item) => {
+      const { url, name, priority } = item;
+
+      try {
+        const result = await processSingleUrl(url, {
+          timeout: priority === 'high' ? config.fetchTimeout * 1.5 : config.fetchTimeout,
+        });
+
+        return {
+          ...result,
+          name: name || null,
+          priority: priority || 'medium',
+        };
+      } catch (error) {
+        return {
+          success: false,
+          storyId: null,
+          url,
+          name: name || null,
+          status: 'failed',
+          error: error.message,
+        };
+      }
+    });
+
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
+
+    // Update batch progress
+    const completedCount = results.filter(r => r.success).length;
+    const failedCount = results.filter(r => !r.success).length;
+
+    batchData.processed = results.length;
+    batchData.completed = completedCount;
+    batchData.failed = failedCount;
+    batchData.stories = results.filter(r => r.storyId).map(r => r.storyId);
+
+    storageService.updateBatch(batchId, batchData);
+
+    logger.info(`Batch ${batchId} progress: ${results.length}/${urlList.length}`);
+  }
+
+  // Build final results
+  batchData.results = results.map(r => ({
+    storyId: r.storyId,
+    url: r.url,
+    name: r.name,
+    status: r.success ? 'completed' : 'failed',
+    htmlPageUrl: r.success ? r.htmlPageUrl : null,
+    pdfReadyUrl: r.success ? r.pdfReadyUrl : null,
+    error: r.success ? null : r.error,
+  }));
+
+  // Generate batch dashboard
+  const dashboardHtml = templateService.renderBatchDashboard(batchData);
+  storageService.saveBatchDashboard(batchId, dashboardHtml);
+
+  // Final update
+  storageService.updateBatch(batchId, {
+    processed: batchData.processed,
+    completed: batchData.completed,
+    failed: batchData.failed,
+    stories: batchData.stories,
+  });
+
+  logger.info(`Batch ${batchId} completed: ${batchData.completed} succeeded, ${batchData.failed} failed`);
+
+  return {
+    success: true,
+    batchId,
+    totalUrls: batchData.totalUrls,
+    createdAt,
+    results: batchData.results,
+    batchDashboardUrl: `${config.baseUrl}/batches/${batchId}`,
+  };
+}
+
+/**
+ * Get story status and data
+ * @param {string} storyId - Story ID
+ * @returns {Object|null} Story data or null
+ */
+function getStoryStatus(storyId) {
+  const story = storageService.getStory(storyId);
+
+  if (!story) {
+    return null;
+  }
+
+  // Get HTML content if available
+  let htmlContent = null;
+  let pdfReadyHtml = null;
+
+  if (story.status === 'completed') {
+    htmlContent = storageService.getHtmlFile(storyId, 'index.html');
+    pdfReadyHtml = storageService.getHtmlFile(storyId, 'pdf-ready.html');
+  }
+
+  return {
+    storyId: story.storyId,
+    url: story.originalUrl,
+    extractedAt: story.extractedAt,
+    status: story.status,
+    htmlContent,
+    pdfReadyHtml,
+    error: story.error,
+  };
+}
+
+/**
+ * Get batch status and results
+ * @param {string} batchId - Batch ID
+ * @returns {Object|null} Batch data or null
+ */
+function getBatchStatus(batchId) {
+  const batch = storageService.getBatch(batchId);
+
+  if (!batch) {
+    return null;
+  }
+
+  // Get results for each story
+  const results = batch.stories.map(storyId => {
+    const story = storageService.getStory(storyId);
+    if (!story) return null;
+
+    return {
+      storyId,
+      url: story.originalUrl,
+      status: story.status,
+      htmlPageUrl: story.status === 'completed'
+        ? `${config.baseUrl}/stories/${storyId}/index.html`
+        : null,
+      error: story.error,
+    };
+  }).filter(Boolean);
+
+  return {
+    batchId: batch.batchId,
+    totalUrls: batch.totalUrls,
+    processed: batch.processed,
+    completed: batch.completed,
+    failed: batch.failed,
+    createdAt: batch.createdAt,
+    results,
+    batchDashboardUrl: `${config.baseUrl}/batches/${batch.batchId}`,
+  };
+}
+
+/**
+ * Retry failed stories in a batch
+ * @param {string} batchId - Batch ID
+ * @returns {Promise<Object>} Retry results
+ */
+async function retryFailedStories(batchId) {
+  const batch = storageService.getBatch(batchId);
+
+  if (!batch) {
+    throw new ExtractionError(ErrorTypes.NOT_FOUND, `Batch not found: ${batchId}`);
+  }
+
+  // Find failed stories
+  const failedStories = batch.stories
+    .map(storyId => storageService.getStory(storyId))
+    .filter(story => story && story.status === 'failed');
+
+  if (failedStories.length === 0) {
+    return {
+      success: true,
+      message: 'No failed stories to retry',
+      retried: 0,
+    };
+  }
+
+  logger.info(`Retrying ${failedStories.length} failed stories in batch ${batchId}`);
+
+  const retryResults = await Promise.all(
+    failedStories.map(story => processSingleUrl(story.originalUrl))
+  );
+
+  const succeeded = retryResults.filter(r => r.success).length;
+  const stillFailed = retryResults.filter(r => !r.success).length;
+
+  // Update batch counts
+  storageService.updateBatch(batchId, {
+    completed: batch.completed + succeeded,
+    failed: batch.failed - succeeded,
+  });
+
+  return {
+    success: true,
+    retried: failedStories.length,
+    succeeded,
+    stillFailed,
+    results: retryResults,
+  };
+}
+
+module.exports = {
+  processSingleUrl,
+  processBatch,
+  getStoryStatus,
+  getBatchStatus,
+  retryFailedStories,
+};
