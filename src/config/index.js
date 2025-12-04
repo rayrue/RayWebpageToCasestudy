@@ -22,7 +22,6 @@ const config = {
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY || '',
     model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
-    timeout: parseInt(process.env.ANTHROPIC_TIMEOUT, 10) || 60000, // 60 second timeout
   },
 
   // URL Box

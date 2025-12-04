@@ -4,13 +4,15 @@
       "Bash(git commit:*)",
       "Bash(git add:*)",
       "Bash(git push)",
-      "Bash(npm test)",
-      "Bash(cd /Users/rayrhodes/.claude-worktrees/URL\\ Extract/gracious-euler && /opt/homebrew/bin/npm install:*)",
       "Bash(cat:*)",
-      "Bash(git push origin gracious-euler)",
-      "Bash(git checkout:*)",
+      "Bash(curl:*)",
+      "Bash(cd:*)",
+      "Bash(/usr/local/bin/npm --version)",
+      "Bash(/opt/homebrew/bin/npm --version)",
+      "Bash(git push --set-upstream origin upbeat-lewin)",
+      "Bash(git stash:*)",
       "Bash(git merge:*)",
-      "Bash(git push:*)"
+      "Bash(git stash pop:*)"
     ],
     "deny": [],
     "ask": []
