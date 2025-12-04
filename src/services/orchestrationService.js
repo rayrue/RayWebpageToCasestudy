@@ -7,12 +7,20 @@ const parsingService = require('./parsingService');
 const templateService = require('./templateService');
 const storageService = require('./storageService');
 const aiAgentService = require('./aiAgentService');
+const gammaService = require('./gammaService');
 
 /**
  * Check if AI agents are available
  */
 function isAiEnabled() {
   return Boolean(config.anthropic.apiKey);
+}
+
+/**
+ * Check if Gamma is available
+ */
+function isGammaEnabled() {
+  return gammaService.isGammaEnabled();
 }
 
 /**
@@ -155,6 +163,43 @@ async function processSingleUrl(url, options = {}) {
       response.content.problem = parsedContent.problem || null;
       response.content.solution = parsedContent.solution || null;
       response.content.results = parsedContent.results || null;
+    }
+
+    // Generate Gamma document if requested and available
+    if (options.useGamma && isGammaEnabled()) {
+      try {
+        logger.info(`Generating Gamma document for ${storyId}`);
+        const gammaResult = await gammaService.generateAndExport(
+          {
+            title: storyData.content.title,
+            companyName: parsedContent.metadata?.companyName,
+            industry: parsedContent.metadata?.industry,
+            summary: parsedContent.metadata?.description,
+            content: storyData.content.textOnly,
+            metrics: parsedContent.metrics || [],
+            quotes: parsedContent.quotes || [],
+            problem: parsedContent.problem,
+            solution: parsedContent.solution,
+            results: parsedContent.results,
+          },
+          {
+            themeId: options.gammaThemeId || config.gamma.defaultThemeId,
+            outputFormat: options.gammaFormat || 'document',
+            logoUrl: options.logoUrl || null,
+          }
+        );
+
+        response.gamma = {
+          gammaId: gammaResult.gammaId,
+          gammaUrl: gammaResult.gammaUrl,
+          pdfUrl: gammaResult.pdfUrl,
+          pdfExpiresAt: gammaResult.pdfExpiresAt,
+        };
+        logger.info(`Gamma document created: ${gammaResult.gammaUrl}`);
+      } catch (gammaError) {
+        logger.error(`Gamma generation failed: ${gammaError.message}`);
+        response.gammaError = gammaError.message;
+      }
     }
 
     return response;

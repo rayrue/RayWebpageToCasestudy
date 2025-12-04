@@ -5,6 +5,7 @@ const { Readable } = require('stream');
 const router = express.Router();
 
 const orchestrationService = require('../services/orchestrationService');
+const gammaService = require('../services/gammaService');
 const { validateSingleExtract, validateBatchExtract } = require('../middleware/validation');
 const { isValidUrl } = require('../utils/helpers');
 const logger = require('../utils/logger');
@@ -28,14 +29,30 @@ const upload = multer({
 /**
  * POST /api/extract/single
  * Extract content from a single URL
+ *
+ * Body parameters:
+ * - url: The URL to extract content from
+ * - options.useGamma: If true, also generate a Gamma document
+ * - options.gammaThemeId: Gamma theme ID to use (optional)
+ * - options.gammaFormat: 'document', 'presentation', or 'webpage' (default: 'document')
+ * - options.logoUrl: URL to customer logo for Gamma header (optional)
  */
 router.post('/single', validateSingleExtract, async (req, res, next) => {
   try {
     const { url, options = {} } = req.body;
 
-    logger.info(`Single extraction request: ${url}`);
+    // Extract Gamma-specific options
+    const processingOptions = {
+      ...options,
+      useGamma: options.useGamma || false,
+      gammaThemeId: options.gammaThemeId || null,
+      gammaFormat: options.gammaFormat || 'document',
+      logoUrl: options.logoUrl || null,
+    };
 
-    const result = await orchestrationService.processSingleUrl(url, options);
+    logger.info(`Single extraction request: ${url} (useGamma: ${processingOptions.useGamma})`);
+
+    const result = await orchestrationService.processSingleUrl(url, processingOptions);
 
     if (result.success) {
       res.status(200).json(result);
@@ -128,5 +145,36 @@ function parseCSV(buffer) {
       });
   });
 }
+
+/**
+ * GET /api/extract/gamma/themes
+ * List available Gamma themes
+ */
+router.get('/gamma/themes', async (req, res, next) => {
+  try {
+    if (!gammaService.isGammaEnabled()) {
+      return res.status(503).json({
+        success: false,
+        error: 'GAMMA_NOT_CONFIGURED',
+        message: 'Gamma API key is not configured',
+      });
+    }
+
+    const themes = await gammaService.listThemes();
+
+    res.status(200).json({
+      success: true,
+      themes: themes.map(t => ({
+        id: t.id,
+        name: t.name,
+        type: t.type,
+        colorKeywords: t.colorKeywords,
+        toneKeywords: t.toneKeywords,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 module.exports = router;

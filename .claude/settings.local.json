@@ -12,7 +12,12 @@
       "Bash(git push --set-upstream origin upbeat-lewin)",
       "Bash(git stash:*)",
       "Bash(git merge:*)",
-      "Bash(git stash pop:*)"
+      "Bash(git stash pop:*)",
+      "Bash(git pull:*)",
+      "Bash(git push origin upbeat-lewin)",
+      "Bash(git fetch:*)",
+      "Bash(git push:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

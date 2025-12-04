@@ -31,6 +31,18 @@ const config = {
     screenshotHeight: parseInt(process.env.URLBOX_SCREENSHOT_HEIGHT, 10) || 1024,
   },
 
+  // Gamma
+  gamma: {
+    apiKey: process.env.GAMMA_API_KEY || '',
+    baseUrl: 'https://public-api.gamma.app/v1.0',
+    defaultThemeId: process.env.GAMMA_DEFAULT_THEME_ID || null,
+  },
+
+  // Brandfetch
+  brandfetch: {
+    apiKey: process.env.BRANDFETCH_API_KEY || '',
+  },
+
   // Rate Limiting
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60000,
