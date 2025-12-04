@@ -1,12 +1,8 @@
 const axios = require('axios');
-const puppeteer = require('puppeteer-core');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { ExtractionError, ErrorTypes, isRetryable, getBackoffDelay } = require('../utils/errors');
 const { sleep, isValidUrl } = require('../utils/helpers');
-
-// Browser instance for reuse
-let browserInstance = null;
 
 // User agent rotation pool
 const USER_AGENTS = [
@@ -25,154 +21,7 @@ function getRandomUserAgent() {
 }
 
 /**
- * Find Chrome executable path
- * Render sets PUPPETEER_EXECUTABLE_PATH or we check common locations
- */
-function getChromePath() {
-  // Check environment variable first (Docker sets this)
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    logger.info(`Using Chrome from env: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
-    return process.env.PUPPETEER_EXECUTABLE_PATH;
-  }
-
-  // Common Chrome/Chromium paths on Linux
-  const possiblePaths = [
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/snap/bin/chromium',
-  ];
-
-  // On Mac (for local development)
-  if (process.platform === 'darwin') {
-    possiblePaths.unshift('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
-  }
-
-  // Check which path exists
-  const fs = require('fs');
-  for (const chromePath of possiblePaths) {
-    if (fs.existsSync(chromePath)) {
-      logger.info(`Found Chrome at: ${chromePath}`);
-      return chromePath;
-    }
-  }
-
-  logger.warn(`Chrome not found in any standard location. Tried: ${possiblePaths.join(', ')}`);
-  return possiblePaths[0];
-}
-
-/**
- * Get or create browser instance
- */
-async function getBrowser() {
-  if (!browserInstance) {
-    const chromePath = getChromePath();
-    logger.info(`Launching headless browser with Chrome at: ${chromePath}`);
-
-    try {
-      browserInstance = await puppeteer.launch({
-        headless: 'new',
-        executablePath: chromePath,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process',
-          '--disable-extensions',
-          '--disable-software-rasterizer',
-        ],
-        timeout: 30000,
-      });
-      logger.info('Browser launched successfully');
-    } catch (launchError) {
-      logger.error(`Failed to launch browser: ${launchError.message}`);
-      logger.error(`Stack: ${launchError.stack}`);
-      throw launchError;
-    }
-  }
-  return browserInstance;
-}
-
-/**
- * Reset browser instance (call on errors to prevent stale references)
- */
-async function resetBrowser() {
-  if (browserInstance) {
-    try {
-      await browserInstance.close();
-    } catch (e) {
-      logger.warn(`Error closing browser: ${e.message}`);
-    }
-    browserInstance = null;
-    logger.info('Browser instance reset');
-  }
-}
-
-/**
- * Fetch URL using headless browser (for JavaScript-rendered pages)
- */
-async function fetchWithBrowser(url, options = {}) {
-  const { timeout = 30000 } = options;
-
-  logger.info(`Fetching with headless browser: ${url}`);
-
-  let browser;
-  let page;
-
-  try {
-    browser = await getBrowser();
-    page = await browser.newPage();
-
-    // Set user agent
-    await page.setUserAgent(getRandomUserAgent());
-
-    // Set viewport
-    await page.setViewport({ width: 1280, height: 800 });
-
-    // Navigate and wait for content
-    await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout,
-    });
-
-    // Wait a bit more for any lazy-loaded content
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Get the fully rendered HTML
-    const html = await page.content();
-    const finalUrl = page.url();
-
-    logger.info(`Successfully fetched with browser: ${url} (${html.length} bytes)`);
-
-    return {
-      html,
-      headers: {},
-      status: 200,
-      url: finalUrl,
-    };
-  } catch (error) {
-    // Reset browser on any error to prevent stale instance
-    logger.error(`Browser error, resetting instance: ${error.message}`);
-    await resetBrowser();
-    throw error;
-  } finally {
-    if (page) {
-      try {
-        await page.close();
-      } catch (e) {
-        logger.warn(`Error closing page: ${e.message}`);
-      }
-    }
-  }
-}
-
-/**
  * Fetch URL content with retry logic
- * Uses headless browser by default for JavaScript-rendered pages
  * @param {string} url - The URL to fetch
  * @param {Object} options - Fetch options
  * @returns {Promise<{html: string, headers: Object, status: number}>}
@@ -181,7 +30,6 @@ async function fetchUrl(url, options = {}) {
   const {
     timeout = config.fetchTimeout,
     maxRetries = config.maxRetries,
-    useBrowser = true,  // Default to browser for JS-rendered content
   } = options;
 
   // Validate URL
@@ -199,21 +47,6 @@ async function fetchUrl(url, options = {}) {
     try {
       logger.debug(`Fetching URL (attempt ${attempt}/${maxRetries}): ${url}`);
 
-      // Try browser first for JS content
-      if (useBrowser) {
-        try {
-          const result = await fetchWithBrowser(url, { timeout });
-          logger.info(`Browser fetch succeeded for ${url}`);
-          return result;
-        } catch (browserError) {
-          logger.error(`Browser fetch failed for ${url}: ${browserError.message}`);
-          logger.error(`Browser error stack: ${browserError.stack}`);
-          logger.warn('Falling back to axios (JS content will NOT render)');
-          // Fall through to axios
-        }
-      }
-
-      // Fallback to axios
       const response = await axios.get(url, {
         timeout,
         headers: {
@@ -246,7 +79,7 @@ async function fetchUrl(url, options = {}) {
         );
       }
 
-      logger.debug(`Successfully fetched URL: ${url}`);
+      logger.info(`Successfully fetched URL: ${url} (${response.data.length} bytes)`);
 
       return {
         html: response.data,
@@ -339,23 +172,9 @@ function getMetadataFromHeaders(headers, html) {
   };
 }
 
-/**
- * Close browser instance (for cleanup)
- */
-async function closeBrowser() {
-  if (browserInstance) {
-    await browserInstance.close();
-    browserInstance = null;
-    logger.info('Browser instance closed');
-  }
-}
-
 module.exports = {
   fetchUrl,
-  fetchWithBrowser,
   extractText,
   getMetadataFromHeaders,
   getRandomUserAgent,
-  closeBrowser,
-  resetBrowser,
 };

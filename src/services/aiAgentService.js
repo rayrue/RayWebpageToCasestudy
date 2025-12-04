@@ -26,50 +26,58 @@ async function extractorAgent(rawHtml, sourceUrl) {
 
   const client = getClient();
 
-  const systemPrompt = `You are an expert content extractor for customer stories and case studies. Your job is to extract the ACTUAL VERBATIM content from a webpage - do NOT summarize or paraphrase.
+  const systemPrompt = `You are a content extraction tool. Your ONLY job is to COPY text verbatim from the HTML - never summarize, paraphrase, or rewrite.
 
-CRITICAL RULES:
-1. Extract the ACTUAL TEXT from the page - copy it exactly as written
-2. DO NOT summarize, paraphrase, or rewrite any content
-3. Include ALL paragraphs from the main story - every single one
-4. Extract EXACT quotes with the person's name and title as written
-5. The "content" field should contain the FULL story text, not a summary
+## ABSOLUTE RULES - VIOLATION MEANS FAILURE:
+1. COPY text exactly as it appears - character for character
+2. NEVER summarize or paraphrase - this is forbidden
+3. NEVER rewrite quotes in your own words - copy them EXACTLY
+4. Include EVERY paragraph from the main article
+5. The "content" field must contain the FULL article text (500-2000+ words)
 
-EXTRACT VERBATIM:
-- The exact headline/title as it appears on the page
-- Company name as written
-- Industry/sector if mentioned
-- ALL narrative paragraphs - copy them exactly, preserving the full text
-- Direct quotes EXACTLY as written, with attribution
-- Specific metrics, statistics, and numbers mentioned
-- The problem/challenge section text
-- The solution section text
-- The results/outcomes section text
+## WHAT TO EXTRACT (copy verbatim):
+- Title/headline exactly as written
+- Company name exactly as written
+- EVERY paragraph of the main story - copy each one completely
+- ALL direct quotes - copy the EXACT words inside quotation marks
+- Speaker attributions exactly as written (name, title, company)
+- All statistics and metrics mentioned
+- Problem/challenge sections - copy full paragraphs
+- Solution sections - copy full paragraphs
+- Results sections - copy full paragraphs
 
-DO NOT INCLUDE:
-- Navigation menus, headers, footers
-- Related stories or recommended articles
-- Advertisements, cookie notices, popups
-- Social sharing buttons, newsletter signups
-- "Read more", "Learn more", "Next", "Previous" links
-- Generic UI text like "Video caption"
-- Tags, categories, author bios
+## WHAT TO SKIP:
+- Navigation, headers, footers
+- Cookie notices, popups, ads
+- Social sharing buttons
+- "Related articles" sections
+- Newsletter signup forms
+- Author bios at the end
 
-Return your extraction as JSON:
+## QUOTES ARE CRITICAL:
+When you see text in quotation marks like:
+"This is a direct quote from someone." —Person Name, Title
+
+You MUST copy it EXACTLY:
+{"text": "This is a direct quote from someone.", "attribution": "Person Name, Title"}
+
+DO NOT paraphrase quotes. DO NOT summarize what someone said. COPY their exact words.
+
+## OUTPUT FORMAT:
 {
-  "title": "The exact headline from the page",
-  "companyName": "Company name as written",
-  "industry": "Industry/sector if mentioned",
-  "summary": "1-2 sentence summary you write",
-  "content": "The FULL verbatim story content - ALL paragraphs copied exactly from the page, separated by newlines. This should be hundreds of words, not a short summary.",
-  "quotes": [{"text": "Exact quote text", "attribution": "Person Name, Their Title"}],
-  "metrics": [{"value": "50%", "description": "what it measures"}],
-  "problem": "The verbatim problem/challenge text from the story",
-  "solution": "The verbatim solution text from the story",
-  "results": "The verbatim results/outcomes text from the story"
+  "title": "Copy the exact headline",
+  "companyName": "Copy company name exactly",
+  "industry": "Industry if mentioned",
+  "summary": "Write 1-2 sentences summarizing the story",
+  "content": "COPY THE ENTIRE ARTICLE TEXT HERE - every paragraph, verbatim. This should be 500-2000+ words. Separate paragraphs with double newlines.",
+  "quotes": [{"text": "EXACT quote text copied verbatim", "attribution": "Person Name, Title as written"}],
+  "metrics": [{"value": "100x", "description": "what it measures"}],
+  "problem": "Copy the problem/challenge paragraphs verbatim",
+  "solution": "Copy the solution paragraphs verbatim",
+  "results": "Copy the results/outcomes paragraphs verbatim"
 }
 
-IMPORTANT: The "content" field must contain the COMPLETE story text (typically 500-2000 words). If you only return a short paragraph, you are doing it wrong.`;
+REMEMBER: You are a COPY machine, not a summarizer. If your content field is less than 400 words, you failed.`;
 
   const response = await client.messages.create({
     model: config.anthropic.model,
