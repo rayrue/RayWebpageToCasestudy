@@ -50,17 +50,33 @@ async function generateDocument(content, options = {}) {
     outputFormat = 'document', // 'document', 'presentation', 'webpage'
     logoUrl = null,
     companyName = content.companyName,
+    exportAs = 'pdf', // 'pdf' or 'pptx'
   } = options;
 
-  // Build the topic/content for Gamma
-  const topic = buildGammaPrompt(content);
+  // Build the input text for Gamma
+  const inputText = buildGammaPrompt(content);
+
+  // Map our format names to Gamma's expected values
+  const formatMap = {
+    'document': 'document',
+    'presentation': 'presentation',
+    'webpage': 'webpage',
+  };
 
   const requestBody = {
-    topic,
-    outputFormat,
-    style: {
+    inputText,
+    textMode: 'preserve', // Keep our structured content
+    format: formatMap[outputFormat] || 'document',
+    numCards: 10,
+    cardSplit: 'auto',
+    exportAs,
+    textOptions: {
       tone: 'professional',
       audience: 'business professionals',
+      language: 'en',
+    },
+    imageOptions: {
+      source: 'aiGenerated',
     },
   };
 
@@ -88,6 +104,7 @@ async function generateDocument(content, options = {}) {
   }
 
   logger.info(`Gamma: Generating ${outputFormat} for "${content.title}"`);
+  logger.debug(`Gamma request body: ${JSON.stringify(requestBody).substring(0, 500)}...`);
 
   const response = await axios.post(
     `${config.gamma.baseUrl}/generations`,
@@ -108,6 +125,8 @@ async function generateDocument(content, options = {}) {
     gammaUrl: response.data.url,
     title: response.data.title,
     status: response.data.status,
+    pdfUrl: response.data.pdfUrl || null,
+    pptxUrl: response.data.pptxUrl || null,
   };
 }
 
@@ -213,13 +232,20 @@ function buildGammaPrompt(content) {
  * @returns {Promise<Object>} Result with Gamma URL and PDF URL
  */
 async function generateAndExport(content, options = {}) {
-  // Generate the document
-  const generated = await generateDocument(content, options);
+  // Generate the document with exportAs option
+  const generated = await generateDocument(content, {
+    ...options,
+    exportAs: 'pdf',
+  });
 
-  // Wait a moment for generation to complete
+  // If PDF URL is already in response, use it
+  if (generated.pdfUrl) {
+    return generated;
+  }
+
+  // Otherwise try to export separately (fallback)
   await new Promise(resolve => setTimeout(resolve, 2000));
 
-  // Export to PDF
   let pdfResult = null;
   try {
     pdfResult = await exportToPdf(generated.gammaId);
@@ -229,7 +255,7 @@ async function generateAndExport(content, options = {}) {
 
   return {
     ...generated,
-    pdfUrl: pdfResult?.pdfUrl || null,
+    pdfUrl: pdfResult?.pdfUrl || generated.pdfUrl || null,
     pdfExpiresAt: pdfResult?.expiresAt || null,
   };
 }
