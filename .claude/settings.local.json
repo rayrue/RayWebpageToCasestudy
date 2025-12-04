@@ -3,7 +3,10 @@
     "allow": [
       "Bash(git commit:*)",
       "Bash(git add:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(npm test)",
+      "Bash(cd /Users/rayrhodes/.claude-worktrees/URL\\ Extract/gracious-euler && /opt/homebrew/bin/npm install:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

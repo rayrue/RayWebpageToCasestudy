@@ -18,11 +18,12 @@ function isAiEnabled() {
 /**
  * Process a single URL and generate story HTML
  * @param {string} url - URL to extract
- * @param {Object} options - Processing options
+ * @param {Object} options - Processing options (including optional existingStoryId for retries)
  * @returns {Promise<Object>} Story result
  */
 async function processSingleUrl(url, options = {}) {
-  const storyId = generateStoryId();
+  // Use existing story ID for retries, or generate new one
+  const storyId = options.existingStoryId || generateStoryId();
   const extractedAt = formatDate();
 
   logger.info(`Processing URL: ${url} (${storyId})`);
@@ -392,8 +393,11 @@ async function retryFailedStories(batchId) {
 
   logger.info(`Retrying ${failedStories.length} failed stories in batch ${batchId}`);
 
+  // Retry with existing story IDs to update in place
   const retryResults = await Promise.all(
-    failedStories.map(story => processSingleUrl(story.originalUrl))
+    failedStories.map(story => processSingleUrl(story.originalUrl, {
+      existingStoryId: story.storyId,  // Reuse existing story ID
+    }))
   );
 
   const succeeded = retryResults.filter(r => r.success).length;
@@ -404,6 +408,29 @@ async function retryFailedStories(batchId) {
     completed: batch.completed + succeeded,
     failed: batch.failed - succeeded,
   });
+
+  // Regenerate batch dashboard with updated results
+  const updatedBatch = storageService.getBatch(batchId);
+  const dashboardResults = updatedBatch.stories.map(storyId => {
+    const story = storageService.getStory(storyId);
+    if (!story) return null;
+    return {
+      storyId,
+      url: story.originalUrl,
+      name: null,
+      status: story.status,
+      htmlPageUrl: story.status === 'completed'
+        ? `${config.baseUrl}/stories/${storyId}/index.html`
+        : null,
+      error: story.error,
+    };
+  }).filter(Boolean);
+
+  const dashboardHtml = templateService.renderBatchDashboard({
+    ...updatedBatch,
+    results: dashboardResults,
+  });
+  storageService.saveBatchDashboard(batchId, dashboardHtml);
 
   return {
     success: true,

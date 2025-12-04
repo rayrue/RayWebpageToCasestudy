@@ -80,7 +80,8 @@ IMPORTANT: The "content" field must contain the COMPLETE story text (typically 5
         role: 'user',
         content: `Extract the COMPLETE customer story content from this webpage. Copy ALL paragraphs verbatim - do not summarize.\n\nSource URL: ${sourceUrl}\n\nHTML Content:\n${rawHtml.substring(0, 100000)}`
       }
-    ]
+    ],
+    timeout: config.anthropic.timeout,
   });
 
   const responseText = response.content[0].text;
@@ -158,7 +159,8 @@ Return your review as JSON:
         role: 'user',
         content: `Review this extracted customer story content from ${sourceUrl}:\n\n${JSON.stringify(extractedData, null, 2)}`
       }
-    ]
+    ],
+    timeout: config.anthropic.timeout,
   });
 
   const responseText = response.content[0].text;
@@ -228,7 +230,8 @@ Do not include any explanation or markdown - just the raw HTML.`;
         role: 'user',
         content: `Create a beautiful PDF-ready HTML page for this customer story from ${sourceUrl}:\n\n${JSON.stringify(content, null, 2)}`
       }
-    ]
+    ],
+    timeout: config.anthropic.timeout,
   });
 
   let html = response.content[0].text;

@@ -8,6 +8,19 @@ services:
         value: production
       - key: PORT
         value: 3000
+      - key: BASE_URL
+        fromService:
+          type: web
+          name: customer-story-service
+          property: host
+      - key: STORAGE_PATH
+        value: /var/data/stories
+      - key: DB_PATH
+        value: /var/data/stories.db
       - key: ANTHROPIC_API_KEY
         sync: false
     healthCheckPath: /health
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1

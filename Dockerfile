@@ -44,9 +44,9 @@ RUN npm install --omit=dev
 # Copy application code
 COPY --chown=nodejs:nodejs . .
 
-# Create storage and log directories
-RUN mkdir -p stories data logs && \
-    chown -R nodejs:nodejs stories data logs
+# Create storage and log directories (both local and mounted paths)
+RUN mkdir -p stories data logs /var/data/stories && \
+    chown -R nodejs:nodejs stories data logs /var/data
 
 # Switch to non-root user
 USER nodejs

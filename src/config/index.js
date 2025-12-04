@@ -13,8 +13,6 @@ const config = {
 
   // Batch Processing
   maxConcurrentWorkers: parseInt(process.env.MAX_CONCURRENT_WORKERS, 10) || 5,
-  batchQueueEnabled: process.env.BATCH_QUEUE_ENABLED === 'true',
-  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
 
   // Storage
   storagePath: process.env.STORAGE_PATH || './stories',
@@ -24,6 +22,7 @@ const config = {
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY || '',
     model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+    timeout: parseInt(process.env.ANTHROPIC_TIMEOUT, 10) || 60000, // 60 second timeout
   },
 
   // URL Box

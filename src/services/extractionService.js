@@ -98,6 +98,21 @@ async function getBrowser() {
 }
 
 /**
+ * Reset browser instance (call on errors to prevent stale references)
+ */
+async function resetBrowser() {
+  if (browserInstance) {
+    try {
+      await browserInstance.close();
+    } catch (e) {
+      logger.warn(`Error closing browser: ${e.message}`);
+    }
+    browserInstance = null;
+    logger.info('Browser instance reset');
+  }
+}
+
+/**
  * Fetch URL using headless browser (for JavaScript-rendered pages)
  */
 async function fetchWithBrowser(url, options = {}) {
@@ -105,10 +120,13 @@ async function fetchWithBrowser(url, options = {}) {
 
   logger.info(`Fetching with headless browser: ${url}`);
 
-  const browser = await getBrowser();
-  const page = await browser.newPage();
+  let browser;
+  let page;
 
   try {
+    browser = await getBrowser();
+    page = await browser.newPage();
+
     // Set user agent
     await page.setUserAgent(getRandomUserAgent());
 
@@ -136,8 +154,19 @@ async function fetchWithBrowser(url, options = {}) {
       status: 200,
       url: finalUrl,
     };
+  } catch (error) {
+    // Reset browser on any error to prevent stale instance
+    logger.error(`Browser error, resetting instance: ${error.message}`);
+    await resetBrowser();
+    throw error;
   } finally {
-    await page.close();
+    if (page) {
+      try {
+        await page.close();
+      } catch (e) {
+        logger.warn(`Error closing page: ${e.message}`);
+      }
+    }
   }
 }
 
@@ -199,21 +228,21 @@ async function fetchUrl(url, options = {}) {
         validateStatus: (status) => status < 500,
       });
 
-      // Check for client errors
-      if (response.status >= 400) {
-        throw new ExtractionError(
-          ErrorTypes.EXTRACTION_FAILED,
-          `HTTP ${response.status}: ${response.statusText}`,
-          { url, status: response.status }
-        );
-      }
-
-      // Check for rate limiting
+      // Check for rate limiting first (429 is also >= 400, so check it first)
       if (response.status === 429) {
         throw new ExtractionError(
           ErrorTypes.RATE_LIMITED,
           'Rate limited by server',
           { url, retryAfter: response.headers['retry-after'] }
+        );
+      }
+
+      // Check for other client errors
+      if (response.status >= 400) {
+        throw new ExtractionError(
+          ErrorTypes.EXTRACTION_FAILED,
+          `HTTP ${response.status}: ${response.statusText}`,
+          { url, status: response.status }
         );
       }
 
@@ -328,4 +357,5 @@ module.exports = {
   getMetadataFromHeaders,
   getRandomUserAgent,
   closeBrowser,
+  resetBrowser,
 };
