@@ -118,7 +118,9 @@ async function generateDocument(content, options = {}) {
     }
   );
 
-  logger.info(`Gamma: Document generated, ID: ${response.data.id}`);
+  // Log full response to debug field mapping
+  logger.info(`Gamma: Full API response: ${JSON.stringify(response.data)}`);
+  logger.info(`Gamma: Document generated, ID: ${response.data.id || response.data.gammaId || response.data.gamma?.id}`);
 
   return {
     gammaId: response.data.id,
