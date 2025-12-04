@@ -19,7 +19,9 @@
       "Bash(git push:*)",
       "Bash(python3:*)",
       "Bash(npm test)",
-      "Bash(/opt/homebrew/bin/npm test)"
+      "Bash(/opt/homebrew/bin/npm test)",
+      "Bash(gh pr create --title \"Add asset metadata generation and integration docs\" --body \"$(cat <<''EOF''\n## Summary\n\n- **AI-generated asset metadata**: The extraction pipeline now generates compelling `asset.title` and `asset.description` fields for importing PDFs into external systems\n- **Webhook callbacks**: Added `callbackUrl` option for async notification when extraction completes\n- **Integration documentation**: Created `INTEGRATION.md` with internal team guide for core app integration\n\n## Changes\n\n### New Features\n- `asset.title`: AI-generated title in format \"[Company]: [Key Achievement]\"\n- `asset.description`: AI-generated description under 200 chars\n- `callbackUrl` option: POST results to specified URL on completion\n\n### Documentation\n- `INTEGRATION.md`: Complete internal integration guide\n- Updated `README.md` with new response fields\n\n## Test plan\n- [ ] Deploy to Render (auto-deploy on merge)\n- [ ] Test extraction with Grammarly URL to verify `asset` field in response\n- [ ] Verify PDF generation still works\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\nEOF\n)\")",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

@@ -330,6 +330,25 @@ This will be documented separately when batch UI is implemented.
 
 ---
 
+## Important Notes
+
+### Cold Starts (Free Tier)
+
+The service runs on Render's free tier, which spins down after ~15 minutes of inactivity. **The first request after idle may take 30-60 seconds** while the service wakes up.
+
+**Recommendation**: Before showing the import UI to a user, ping the health endpoint to warm up the service:
+
+```javascript
+// Warm up service when user opens import modal
+await fetch('https://raywebpagetocasestudy.onrender.com/health');
+```
+
+### Authentication
+
+Currently there is **no API authentication** - the service is open. This is fine for internal beta testing. If we need to lock it down later, we can add an `X-API-Key` header requirement.
+
+---
+
 ## Contacts
 
 - **Service Owner**: [Your name]
