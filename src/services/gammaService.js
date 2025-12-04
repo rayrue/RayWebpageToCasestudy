@@ -120,16 +120,75 @@ async function generateDocument(content, options = {}) {
 
   // Log full response to debug field mapping
   logger.info(`Gamma: Full API response: ${JSON.stringify(response.data)}`);
-  logger.info(`Gamma: Document generated, ID: ${response.data.id || response.data.gammaId || response.data.gamma?.id}`);
+
+  const generationId = response.data.generationId;
+  logger.info(`Gamma: Generation started, ID: ${generationId}`);
+
+  if (!generationId) {
+    throw new Error('Gamma API did not return a generationId');
+  }
+
+  // Poll for generation status until complete
+  const result = await pollGenerationStatus(generationId);
 
   return {
-    gammaId: response.data.id,
-    gammaUrl: response.data.url,
-    title: response.data.title,
-    status: response.data.status,
-    pdfUrl: response.data.pdfUrl || null,
-    pptxUrl: response.data.pptxUrl || null,
+    gammaId: result.gammaId,
+    gammaUrl: result.url,
+    title: result.title || content.title,
+    status: result.status,
+    pdfUrl: result.pdfUrl || null,
+    pptxUrl: result.pptxUrl || null,
   };
+}
+
+/**
+ * Poll for generation status until complete
+ * @param {string} generationId - The generation ID from the initial request
+ * @returns {Promise<Object>} Generation result with gammaId and URLs
+ */
+async function pollGenerationStatus(generationId) {
+  const maxAttempts = 60; // 5 minutes max (5 seconds * 60)
+  const pollInterval = 5000; // 5 seconds
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    logger.info(`Gamma: Polling generation status (attempt ${attempt + 1}/${maxAttempts})`);
+
+    const response = await axios.get(
+      `${config.gamma.baseUrl}/generations/${generationId}`,
+      {
+        headers: {
+          'X-API-KEY': config.gamma.apiKey,
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000,
+      }
+    );
+
+    logger.info(`Gamma: Generation status response: ${JSON.stringify(response.data)}`);
+
+    const { status, gamma, pdfUrl, pptxUrl, error } = response.data;
+
+    if (status === 'completed' || status === 'complete') {
+      logger.info(`Gamma: Generation completed! Gamma ID: ${gamma?.id}, URL: ${gamma?.url}`);
+      return {
+        gammaId: gamma?.id,
+        url: gamma?.url,
+        title: gamma?.title,
+        status: 'completed',
+        pdfUrl: pdfUrl || null,
+        pptxUrl: pptxUrl || null,
+      };
+    }
+
+    if (status === 'failed' || status === 'error') {
+      throw new Error(`Gamma generation failed: ${error || 'Unknown error'}`);
+    }
+
+    // Still processing, wait and try again
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error('Gamma generation timed out after 5 minutes');
 }
 
 /**
