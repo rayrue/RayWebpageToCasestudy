@@ -6,7 +6,11 @@
       "Bash(git push)",
       "Bash(npm test)",
       "Bash(cd /Users/rayrhodes/.claude-worktrees/URL\\ Extract/gracious-euler && /opt/homebrew/bin/npm install:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git push origin gracious-euler)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

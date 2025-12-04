@@ -1,5 +1,6 @@
 # Use Debian-based image for Chromium support
-FROM node:18-slim
+# Node 20+ required for undici (Anthropic SDK dependency)
+FROM node:20-slim
 
 # Install Chromium and dependencies for Puppeteer
 RUN apt-get update && apt-get install -y \
