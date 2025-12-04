@@ -17,10 +17,95 @@ function isAiEnabled() {
 }
 
 /**
+ * Generate asset title and description for import into external systems
+ * @param {Object} content - Extracted content
+ * @param {Object} parsedContent - Full parsed content with metrics, quotes, etc.
+ * @returns {Object} Asset metadata with title and description
+ */
+function generateAssetMetadata(content, parsedContent) {
+  // Generate title: "[Company]: [Key Metric or Title Summary]"
+  const companyName = parsedContent.metadata?.companyName;
+  const title = content.title || 'Customer Story';
+
+  let assetTitle;
+  if (companyName && parsedContent.metrics?.length > 0) {
+    // Use first metric as headline
+    const topMetric = parsedContent.metrics[0];
+    assetTitle = `${companyName}: ${topMetric.value} ${topMetric.description}`;
+  } else if (companyName) {
+    assetTitle = `${companyName} - ${title}`;
+  } else {
+    assetTitle = title;
+  }
+
+  // Generate description: Summary + key metrics + quote attribution
+  const parts = [];
+
+  // Add summary or first 150 chars of content
+  if (parsedContent.metadata?.description) {
+    parts.push(parsedContent.metadata.description);
+  } else if (content.textOnly) {
+    const summary = content.textOnly.substring(0, 150).trim();
+    parts.push(summary + (content.textOnly.length > 150 ? '...' : ''));
+  }
+
+  // Add metrics summary
+  if (parsedContent.metrics?.length > 0) {
+    const metricsText = parsedContent.metrics
+      .slice(0, 3)
+      .map(m => `${m.value} ${m.description}`)
+      .join(', ');
+    parts.push(`Key results: ${metricsText}.`);
+  }
+
+  // Add quote attribution if available
+  if (parsedContent.quotes?.length > 0) {
+    const firstQuote = parsedContent.quotes[0];
+    if (firstQuote.attribution) {
+      parts.push(`Features testimony from ${firstQuote.attribution}.`);
+    }
+  }
+
+  // Add industry if available
+  if (parsedContent.metadata?.industry) {
+    parts.push(`Industry: ${parsedContent.metadata.industry}.`);
+  }
+
+  const assetDescription = parts.join(' ');
+
+  return {
+    title: assetTitle,
+    description: assetDescription,
+  };
+}
+
+/**
  * Check if Gamma is available
  */
 function isGammaEnabled() {
   return gammaService.isGammaEnabled();
+}
+
+/**
+ * Send callback notification when extraction completes
+ * @param {string} callbackUrl - URL to POST results to
+ * @param {Object} result - Extraction result
+ */
+async function sendCallback(callbackUrl, result) {
+  if (!callbackUrl) return;
+
+  try {
+    logger.info(`Sending callback to: ${callbackUrl}`);
+    const axios = require('axios');
+    await axios.post(callbackUrl, result, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000,
+    });
+    logger.info(`Callback sent successfully to: ${callbackUrl}`);
+  } catch (error) {
+    logger.error(`Callback failed to ${callbackUrl}: ${error.message}`);
+    // Don't throw - callback failure shouldn't fail the extraction
+  }
 }
 
 /**
@@ -163,6 +248,18 @@ async function processSingleUrl(url, options = {}) {
       response.content.problem = parsedContent.problem || null;
       response.content.solution = parsedContent.solution || null;
       response.content.results = parsedContent.results || null;
+      response.content.quotes = parsedContent.quotes || [];
+    }
+
+    // Generate asset metadata for import into external systems
+    // Prefer AI-generated metadata, fall back to programmatic generation
+    if (parsedContent.assetTitle && parsedContent.assetDescription) {
+      response.asset = {
+        title: parsedContent.assetTitle,
+        description: parsedContent.assetDescription,
+      };
+    } else {
+      response.asset = generateAssetMetadata(storyData.content, parsedContent);
     }
 
     // Generate Gamma document if requested and available
@@ -202,6 +299,11 @@ async function processSingleUrl(url, options = {}) {
       }
     }
 
+    // Send callback if URL provided (fire-and-forget)
+    if (options.callbackUrl) {
+      sendCallback(options.callbackUrl, response);
+    }
+
     return response;
   } catch (error) {
     // Handle extraction errors
@@ -217,7 +319,7 @@ async function processSingleUrl(url, options = {}) {
 
     logger.error(`Failed to process URL: ${url} - ${extractionError.message}`);
 
-    return {
+    const errorResponse = {
       success: false,
       storyId: null,
       error: extractionError.type,
@@ -225,6 +327,13 @@ async function processSingleUrl(url, options = {}) {
       url,
       retryable: extractionError.retryable,
     };
+
+    // Send callback on failure too
+    if (options.callbackUrl) {
+      sendCallback(options.callbackUrl, errorResponse);
+    }
+
+    return errorResponse;
   }
 }
 

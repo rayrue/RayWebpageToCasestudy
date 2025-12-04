@@ -74,7 +74,9 @@ DO NOT paraphrase quotes. DO NOT summarize what someone said. COPY their exact w
   "metrics": [{"value": "100x", "description": "what it measures"}],
   "problem": "Copy the problem/challenge paragraphs verbatim",
   "solution": "Copy the solution paragraphs verbatim",
-  "results": "Copy the results/outcomes paragraphs verbatim"
+  "results": "Copy the results/outcomes paragraphs verbatim",
+  "assetTitle": "A compelling 5-10 word title for this case study that highlights the key result or transformation. Format: '[Company]: [Key Achievement]' e.g. 'Acme Corp: 10x Faster Deployments'",
+  "assetDescription": "A 1-2 sentence description (under 200 chars) summarizing the business impact and who this story features. This will be used when importing the PDF as an asset."
 }
 
 REMEMBER: You are a COPY machine, not a summarizer. If your content field is less than 400 words, you failed.`;
@@ -302,6 +304,9 @@ async function processWithAgents(rawHtml, sourceUrl) {
       suggestions: reviewed.suggestions,
     },
     pdfReadyHtml: htmlOutput,
+    // AI-generated asset metadata for import into external systems
+    assetTitle: finalData.assetTitle || null,
+    assetDescription: finalData.assetDescription || null,
   };
 }
 

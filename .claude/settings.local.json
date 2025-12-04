@@ -17,7 +17,9 @@
       "Bash(git push origin upbeat-lewin)",
       "Bash(git fetch:*)",
       "Bash(git push:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(npm test)",
+      "Bash(/opt/homebrew/bin/npm test)"
     ],
     "deny": [],
     "ask": []

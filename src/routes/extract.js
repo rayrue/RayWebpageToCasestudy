@@ -36,18 +36,20 @@ const upload = multer({
  * - options.gammaThemeId: Gamma theme ID to use (optional)
  * - options.gammaFormat: 'document', 'presentation', or 'webpage' (default: 'document')
  * - options.logoUrl: URL to customer logo for Gamma header (optional)
+ * - options.callbackUrl: URL to POST results to when complete (optional, for async workflows)
  */
 router.post('/single', validateSingleExtract, async (req, res, next) => {
   try {
     const { url, options = {} } = req.body;
 
-    // Extract Gamma-specific options
+    // Extract processing options
     const processingOptions = {
       ...options,
       useGamma: options.useGamma || false,
       gammaThemeId: options.gammaThemeId || null,
       gammaFormat: options.gammaFormat || 'document',
       logoUrl: options.logoUrl || null,
+      callbackUrl: options.callbackUrl || null,
     };
 
     logger.info(`Single extraction request: ${url} (useGamma: ${processingOptions.useGamma})`);

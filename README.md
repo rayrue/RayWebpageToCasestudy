@@ -132,6 +132,7 @@ Content-Type: application/json
 | `gammaThemeId` | string | Custom theme ID from your Gamma workspace |
 | `gammaFormat` | string | `document`, `presentation`, or `webpage` |
 | `logoUrl` | string | URL to customer logo for header |
+| `callbackUrl` | string | URL to POST results when extraction completes (for async workflows) |
 
 **Response:**
 ```json
@@ -150,6 +151,10 @@ Content-Type: application/json
     "metrics": [{"value": "100X", "description": "performance improvement"}],
     "quotes": [{"text": "This changed everything...", "attribution": "John Doe, CTO"}]
   },
+  "asset": {
+    "title": "Acme Corp: 100X Performance Improvement",
+    "description": "Customer story showcasing how Acme Corp achieved 100X performance improvement. Features testimony from John Doe, CTO."
+  },
   "htmlPageUrl": "https://raywebpagetocasestudy.onrender.com/stories/story_5d99c11684c3/index.html",
   "pdfReadyUrl": "https://raywebpagetocasestudy.onrender.com/stories/story_5d99c11684c3/pdf-ready.html",
   "gamma": {
@@ -159,6 +164,8 @@ Content-Type: application/json
   }
 }
 ```
+
+**Asset Metadata:** The `asset` field contains AI-generated title and description optimized for importing the PDF into external systems. The title follows the format "[Company]: [Key Achievement]" and the description summarizes the business impact in under 200 characters.
 
 ### List Gamma Themes
 
@@ -264,7 +271,7 @@ Environment variables:
 
 ### aiAgentService.js
 Three-agent pipeline using Claude:
-1. **Extractor Agent**: Copies content verbatim from HTML (never summarizes)
+1. **Extractor Agent**: Copies content verbatim from HTML (never summarizes), also generates asset title/description for external imports
 2. **Reviewer Agent**: Validates extraction quality, scores 1-10
 3. **Formatter Agent**: Generates clean HTML for PDF conversion
 
@@ -280,8 +287,10 @@ Coordinates the full pipeline:
 1. Fetch URL content
 2. Run AI extraction pipeline
 3. Generate HTML files
-4. Optionally generate Gamma document
-5. Return all URLs and metadata
+4. Generate asset metadata (AI-generated title & description for external imports)
+5. Optionally generate Gamma document
+6. Optionally send webhook callback
+7. Return all URLs and metadata
 
 ## Usage Examples
 
