@@ -166,17 +166,17 @@ async function pollGenerationStatus(generationId) {
 
     logger.info(`Gamma: Generation status response: ${JSON.stringify(response.data)}`);
 
-    const { status, gamma, pdfUrl, pptxUrl, error } = response.data;
+    const { status, gammaUrl, exportUrl, error } = response.data;
 
     if (status === 'completed' || status === 'complete') {
-      logger.info(`Gamma: Generation completed! Gamma ID: ${gamma?.id}, URL: ${gamma?.url}`);
+      logger.info(`Gamma: Generation completed! URL: ${gammaUrl}, Export: ${exportUrl}`);
       return {
-        gammaId: gamma?.id,
-        url: gamma?.url,
-        title: gamma?.title,
+        gammaId: response.data.generationId,
+        url: gammaUrl,
+        title: null, // Not provided in response
         status: 'completed',
-        pdfUrl: pdfUrl || null,
-        pptxUrl: pptxUrl || null,
+        pdfUrl: exportUrl || null,
+        pptxUrl: null,
       };
     }
 
